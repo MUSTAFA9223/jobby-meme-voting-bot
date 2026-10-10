@@ -290,10 +290,10 @@ def main():
                 'date': int(time.time()),
                 'chat': {'id': 8355389673, 'type': 'private'},
                 'from': {'id': 8355389673, 'is_bot': False, 'first_name': 'JOBBY Admin'},
-                'text': 'First entry\nhttps://x.com/Simdavv/status/2108992018710245825',
+                'text': 'Live video test\nhttps://x.com/NASA/status/2102748685792596449',
                 'forward_origin': {
                     'type': 'user',
-                    'sender_user': {'id': 91, 'is_bot': False, 'first_name': 'Simdav', 'username': 'simdav'},
+                    'sender_user': {'id': 91, 'is_bot': False, 'first_name': 'NASA media', 'username': 'nasa_media'},
                 },
             },
         }
@@ -322,7 +322,7 @@ def main():
             raise RuntimeError('Live X media test did not prepare a complete draft; fetch=' + media_result + '; draft=' + draft_state)
         test_data = json.loads(drafts[0]['data'])
         parsed_media = urllib.parse.urlparse(test_data.get('photo_file_id', ''))
-        if test_data.get('media_type') != 'photo' or parsed_media.scheme != 'https' or parsed_media.hostname not in ('pbs.twimg.com', 'd.fxtwitter.com'):
+        if test_data.get('media_type') != 'video' or parsed_media.scheme != 'https' or parsed_media.hostname not in ('video.twimg.com', 'd.fxtwitter.com'):
             raise RuntimeError('Live X media test returned an unexpected media source')
         cancel_test = {
             'update_id': media_test_id + 1,
@@ -354,7 +354,7 @@ def main():
             time.sleep(2)
         if remaining:
             raise RuntimeError('Live X media test draft cleanup failed')
-        print('Live X image fetch, Telegram preview delivery, and draft cleanup passed.')
+        print('Live X video fetch, Telegram preview delivery, and draft cleanup passed.')
     # A real Telegram API delivery check to the configured organizer, not the community.
     telegram('sendMessage', {'chat_id': 8355389673,
         'text': '✅ JOBBY يعمل الآن على Cloudflare ويدعم الصور والفيديو وGIF. أرسل /start ثم جرّب /add.'})
