@@ -89,6 +89,9 @@ def main():
     for statement in schema.split(';'):
         if statement.strip():
             cf(endpoint, {'sql': statement})
+    entry_columns = cf(endpoint, {'sql': 'PRAGMA table_info(entries)'})[0]['results']
+    if not any(column['name'] == 'media_type' for column in entry_columns):
+        cf(endpoint, {'sql': "ALTER TABLE entries ADD COLUMN media_type TEXT NOT NULL DEFAULT 'photo' CHECK(media_type IN ('photo','video','animation'))"})
     # A marker makes reruns safe. Never replace an existing live contest.
     marker = cf(endpoint, {'sql': "SELECT value FROM config WHERE key='github_migrated'"})[0]['results']
     if not marker:
@@ -202,10 +205,10 @@ def main():
     print('Worker webhook self-test passed; organizer welcome delivered through the Worker.')
     # A real Telegram API delivery check to the configured organizer, not the community.
     telegram('sendMessage', {'chat_id': 8355389673,
-        'text': '✅ JOBBY يعمل الآن على Cloudflare. أرسل /start ثم جرّب /add وإرسال صورة للتحقق من سرعة الرد.'})
+        'text': '✅ JOBBY يعمل الآن على Cloudflare ويدعم الصور والفيديو وGIF. أرسل /start ثم جرّب /add.'})
     print('Cloudflare deployed and healthy; Telegram webhook configured and organizer test message delivered.')
     print('Worker: ' + url)
-    print('Send /start and a photo to verify end-to-end Telegram delivery.')
+    print('Send /start and a photo, video, or GIF to verify end-to-end Telegram delivery.')
 
 
 if __name__ == '__main__':
