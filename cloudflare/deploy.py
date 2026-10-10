@@ -9,13 +9,13 @@ import subprocess
 import urllib.request
 
 ROOT = Path(__file__).resolve().parent
-ACCOUNT = os.environ['CLOUDFLARE_ACCOUNT_ID']
 CF_TOKEN = os.environ['CLOUDFLARE_API_TOKEN']
 BOT_TOKEN = os.environ['JOBBY_BOT_TOKEN']
+ACCOUNT = ''
 
 
-def cf(path, payload=None, method=None):
-    req = urllib.request.Request('https://api.cloudflare.com/client/v4/accounts/' + ACCOUNT + path,
+def cf_api(url, payload=None, method=None):
+    req = urllib.request.Request(url,
         data=json.dumps(payload).encode() if payload is not None else None,
         headers={'Authorization': 'Bearer ' + CF_TOKEN, 'Content-Type': 'application/json'}, method=method)
     try:
@@ -26,6 +26,11 @@ def cf(path, payload=None, method=None):
         return data['result']
     except Exception:
         raise RuntimeError('Cloudflare request failed; response suppressed to protect secrets') from None
+
+
+def cf(path, payload=None, method=None):
+    return cf_api('https://api.cloudflare.com/client/v4/accounts/' + ACCOUNT + path,
+                  payload, method)
 
 
 def telegram(method, payload):
@@ -50,6 +55,11 @@ def wrangler(*args, input_text=None):
 
 
 def main():
+    global ACCOUNT
+    accounts = cf_api('https://api.cloudflare.com/client/v4/accounts?per_page=100')
+    if len(accounts) != 1:
+        raise RuntimeError('Cloudflare token must be limited to exactly one account')
+    ACCOUNT = accounts[0]['id']
     with sqlite3.connect(os.environ['DB_PATH']) as snapshot:
         if snapshot.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
             raise RuntimeError('Encrypted contest snapshot integrity check failed')
