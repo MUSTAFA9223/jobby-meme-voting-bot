@@ -6,6 +6,7 @@ from pathlib import Path
 import secrets
 import sqlite3
 import subprocess
+import time
 import urllib.request
 import re
 
@@ -114,6 +115,7 @@ def main():
     config = (ROOT / 'wrangler.jsonc').read_text().replace('REPLACE_WITH_D1_DATABASE_ID', database_id)
     (ROOT / 'wrangler.deploy.json').write_text(config)
     wrangler('deploy', '--config', 'wrangler.deploy.json')
+    print('Worker code uploaded.')
     webhook_secret = secrets.token_hex(32)
     worker_secrets = {
         'JOBBY_BOT_TOKEN': BOT_TOKEN,
@@ -124,11 +126,25 @@ def main():
         worker_secrets['JOBBY_REQUIRED_CHAT_ID'] = required_chat
     wrangler('secret', 'bulk', '--config', 'wrangler.deploy.json',
              input_text=json.dumps(worker_secrets))
-    subdomain = cf('/workers/subdomain')['subdomain']
+    print('Worker secrets configured.')
+    subdomain_info = cf('/workers/subdomain')
+    if not isinstance(subdomain_info, dict) or not subdomain_info.get('subdomain'):
+        raise RuntimeError('Cloudflare workers.dev subdomain is not configured')
+    subdomain = subdomain_info['subdomain']
     url = 'https://jobby-meme-voting.' + subdomain + '.workers.dev'
-    with urllib.request.urlopen(url + '/health', timeout=30) as response:
-        if response.status != 200:
-            raise RuntimeError('Worker health check failed; webhook unchanged')
+    healthy = False
+    for _ in range(6):
+        try:
+            with urllib.request.urlopen(url + '/health', timeout=30) as response:
+                healthy = response.status == 200
+        except Exception:
+            healthy = False
+        if healthy:
+            break
+        time.sleep(3)
+    if not healthy:
+        raise RuntimeError('Worker health check failed after deployment; webhook unchanged')
+    print('Worker health check passed.')
     telegram('setWebhook', {'url': url + '/webhook', 'secret_token': webhook_secret,
         'max_connections': 1, 'allowed_updates': ['message', 'callback_query'], 'drop_pending_updates': False})
     info = telegram('getWebhookInfo', {})
