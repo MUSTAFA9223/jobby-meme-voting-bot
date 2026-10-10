@@ -48,7 +48,7 @@ test('connected groups and channels appear in the publish menu and receive media
  assert.ok(menu.payload.reply_markup.inline_keyboard.flat().some(x=>x.callback_data==='admin:post:1:-100123'));
  await post(env,cb(4,'admin:post:1:-100123',8355389673));
  const published=sent.find(x=>x.method==='sendVideo'&&x.payload.chat_id===-100123);
- assert.ok(published);assert.match(published.payload.caption,/Vote and rate directly below/);assert.ok(!published.payload.caption.includes('Your vote'));
+ assert.ok(published);assert.match(published.payload.caption,/Vote and rate directly below/);assert.match(published.payload.caption,/View original post on X/);assert.ok(published.payload.reply_markup.inline_keyboard.flat().some(x=>x.text==='🐦 View Tweet on X'&&x.url==='https://x.com/creator/status/1'));assert.ok(!published.payload.caption.includes('Your vote'));
 });
 test('members vote and rate directly on a shared group or channel post',async()=>{
  const {env,db}=fixture(),sent=[];seed(db,1,'animation');globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
