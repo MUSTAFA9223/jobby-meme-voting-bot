@@ -13,6 +13,7 @@ function fixture(){
 }
 const post=(env,u,secret='test-secret')=>worker.fetch(new Request('https://test/webhook',{method:'POST',headers:{'X-Telegram-Bot-Api-Secret-Token':secret},body:JSON.stringify(u)}),env);
 const message=(id,text,admin=8355389673)=>({update_id:id,message:{message_id:id,chat:{id:admin,type:'private'},from:{id:admin},text}});
+const mediaMessage=(id,type,fileId,admin=8355389673)=>{const u=message(id,'',admin);u.message[type]=type==='photo'?[{file_id:fileId}]:{file_id:fileId};return u;};
 const cb=(id,data,user=44)=>({update_id:id,callback_query:{id:String(id),data,from:{id:user,username:'voter'},message:{message_id:99,chat:{id:user,type:'private'},photo:[{file_id:'photo'}]}}});
 function seed(db,id=1){db.prepare('INSERT INTO entries(id,photo_file_id,tweet_url,x_username,telegram_username,created_by,created_at) VALUES(?,?,?,?,?,?,?)').run(id,'photo',`https://x.com/creator/status/${id}`,'creator','creatorname',8355389673,'today');}
 test('unauthenticated requests cannot write; malformed updates are rejected',async()=>{
@@ -22,7 +23,17 @@ test('full photo wizard survives requests and duplicate publishing creates one e
  const {env,db}=fixture();const sent=[];globalThis.fetch=async(url,opts)=>{sent.push(JSON.parse(opts.body));return Response.json({ok:true,result:{}});};
  const inputs=[message(1,'/add'),{...message(2,''),message:{...message(2,'').message,photo:[{file_id:'small'},{file_id:'large'}]}},message(3,'https://twitter.com/creator/status/123?s=20'),message(4,'@creator'),message(5,'@creatorname'),cb(6,'admin:confirm',8355389673)];
  for(const u of inputs)assert.equal((await post(env,u)).status,200);
- assert.equal((await post(env,inputs[5])).status,200);assert.equal(db.prepare('SELECT COUNT(*) n FROM entries').get().n,1);assert.equal(db.prepare('SELECT photo_file_id FROM entries').get().photo_file_id,'large');assert.equal(db.prepare('SELECT COUNT(*) n FROM drafts').get().n,0);assert.ok(sent.some(x=>x.caption?.includes('Review before publishing')));
+ assert.equal((await post(env,inputs[5])).status,200);assert.equal(db.prepare('SELECT COUNT(*) n FROM entries').get().n,1);assert.deepEqual({...db.prepare('SELECT photo_file_id,media_type FROM entries').get()},{photo_file_id:'large',media_type:'photo'});assert.equal(db.prepare('SELECT COUNT(*) n FROM drafts').get().n,0);assert.ok(sent.some(x=>x.caption?.includes('Review before publishing')));
+});
+test('video and GIF memes publish with the correct Telegram media methods',async()=>{
+ for(const [type,method] of [['video','sendVideo'],['animation','sendAnimation']]){
+  const {env,db}=fixture(),sent=[];globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
+  const inputs=[message(1,'/add'),mediaMessage(2,type,`${type}-file`),message(3,'https://x.com/creator/status/123'),message(4,'@creator'),message(5,'@creatorname'),cb(6,'admin:confirm',8355389673)];
+  for(const u of inputs)assert.equal((await post(env,u)).status,200);
+  assert.deepEqual({...db.prepare('SELECT photo_file_id,media_type FROM entries').get()},{photo_file_id:`${type}-file`,media_type:type});
+  assert.ok(sent.some(x=>x.method===method&&x.payload.caption?.includes('Review before publishing')));
+  assert.ok(sent.some(x=>x.method===method&&x.payload.caption?.includes('JOBBY MEME CONTEST')));
+ }
 });
 test('one vote across entries; ratings update; paused and non-admin commands are enforced',async()=>{
  const {env,db}=fixture();seed(db);seed(db,2);globalThis.fetch=async()=>Response.json({ok:true,result:{}});
