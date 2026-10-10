@@ -18,6 +18,11 @@ CREATE TABLE IF NOT EXISTS ratings (
 CREATE INDEX IF NOT EXISTS idx_ratings_entry ON ratings(entry_id);
 CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY,value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS drafts (admin_id INTEGER PRIMARY KEY,step TEXT NOT NULL,data TEXT NOT NULL,updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS destinations (
+ chat_id INTEGER PRIMARY KEY, title TEXT NOT NULL, chat_type TEXT NOT NULL,
+ active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+ registered_by INTEGER NOT NULL, updated_at TEXT NOT NULL
+);
 INSERT OR IGNORE INTO config VALUES ('status','open');
 CREATE TABLE IF NOT EXISTS webhook_updates (
  update_id INTEGER PRIMARY KEY, received_at TEXT NOT NULL, completed INTEGER NOT NULL DEFAULT 0
