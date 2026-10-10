@@ -3,7 +3,6 @@ import json
 import hashlib
 import os
 from pathlib import Path
-import secrets
 import sqlite3
 import subprocess
 import time
@@ -117,7 +116,8 @@ def main():
     (ROOT / 'wrangler.deploy.json').write_text(config)
     wrangler('deploy', '--config', 'wrangler.deploy.json')
     print('Worker code uploaded.')
-    webhook_secret = secrets.token_hex(32)
+    webhook_secret = hashlib.sha256(
+        (os.environ['STATE_KEY'] + ':jobby-webhook-v1').encode()).hexdigest()
     worker_secrets = {
         'JOBBY_BOT_TOKEN': BOT_TOKEN,
         'JOBBY_WEBHOOK_SECRET': webhook_secret,
@@ -175,22 +175,30 @@ def main():
             'text': '/start',
         },
     }
-    self_test_request = urllib.request.Request(url + '/webhook',
-        data=json.dumps(self_test).encode(), method='POST', headers={
-            'Content-Type': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (compatible; JOBBY-Webhook-Test/1.0)',
-            'X-Telegram-Bot-Api-Secret-Token': webhook_secret,
-        })
-    try:
-        with urllib.request.urlopen(self_test_request, timeout=30) as response:
-            if response.status != 200:
-                raise RuntimeError()
-    except urllib.error.HTTPError as exc:
-        body = exc.read(160).decode('utf-8', 'replace')
-        safe_body = re.sub(r'[^A-Za-z0-9 ._-]', '', body)
-        raise RuntimeError('Worker webhook self-test failed with HTTP ' + str(exc.code) + ': ' + safe_body) from None
-    except Exception:
-        raise RuntimeError('Worker webhook self-test transport failed') from None
+    self_test_diagnostic = 'no response'
+    self_test_passed = False
+    for _ in range(10):
+        self_test_request = urllib.request.Request(url + '/webhook',
+            data=json.dumps(self_test).encode(), method='POST', headers={
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (compatible; JOBBY-Webhook-Test/1.0)',
+                'X-Telegram-Bot-Api-Secret-Token': webhook_secret,
+            })
+        try:
+            with urllib.request.urlopen(self_test_request, timeout=30) as response:
+                self_test_passed = response.status == 200
+                self_test_diagnostic = 'HTTP ' + str(response.status)
+        except urllib.error.HTTPError as exc:
+            body = exc.read(160).decode('utf-8', 'replace')
+            safe_body = re.sub(r'[^A-Za-z0-9 ._-]', '', body)
+            self_test_diagnostic = 'HTTP ' + str(exc.code) + ': ' + safe_body
+        except Exception:
+            self_test_diagnostic = 'transport failure'
+        if self_test_passed:
+            break
+        time.sleep(3)
+    if not self_test_passed:
+        raise RuntimeError('Worker webhook self-test failed: ' + self_test_diagnostic)
     print('Worker webhook self-test passed; organizer welcome delivered through the Worker.')
     # A real Telegram API delivery check to the configured organizer, not the community.
     telegram('sendMessage', {'chat_id': 8355389673,
