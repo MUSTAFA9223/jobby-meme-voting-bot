@@ -43,7 +43,11 @@ export class Contest {
   write(sql, ...args) { this.sql.push(this.env.DB.prepare(sql).bind(...args)); }
   api(method, payload) { this.responses.push({method,payload}); }
   send(chat_id,text,reply_markup) { this.api('sendMessage',{chat_id,text,parse_mode:'HTML',...(reply_markup?{reply_markup}:{})}); }
-  photo(chat_id,photo,caption,reply_markup) { this.api('sendPhoto',{chat_id,photo,caption,parse_mode:'HTML',reply_markup}); }
+  media(chat_id,type,file_id,caption,reply_markup) {
+    const method={photo:'sendPhoto',video:'sendVideo',animation:'sendAnimation'}[type]||'sendPhoto';
+    const field={photo:'photo',video:'video',animation:'animation'}[type]||'photo';
+    this.api(method,{chat_id,[field]:file_id,caption,parse_mode:'HTML',...(reply_markup?{reply_markup}:{})});
+  }
   ack(id,text='') { this.api('answerCallbackQuery',{callback_query_id:id,text}); }
   get status() { return this.state.config.status || 'open'; }
   isAdmin() { return this.admins.has(this.userId); }
@@ -55,7 +59,7 @@ export class Contest {
     this.write('INSERT INTO drafts(admin_id,step,data,updated_at) VALUES(?,?,?,?) ON CONFLICT(admin_id) DO UPDATE SET step=excluded.step,data=excluded.data,updated_at=excluded.updated_at',this.userId,step,JSON.stringify(data),now());
   }
   clearDraft() { this.state.draft=null; this.write('DELETE FROM drafts WHERE admin_id=?',this.userId); }
-  startDraft(chat) { this.draft('photo',{}); this.send(chat,'➕ <b>Add JOBBY meme</b>\nStep 1/4: Send the meme as a photo (not a file).\n/cancel to stop.'); }
+  startDraft(chat) { this.draft('media',{}); this.send(chat,'➕ <b>Add JOBBY meme</b>\nStep 1/4: Send the meme as a photo, video, or GIF.\n/cancel to stop.'); }
   welcome(chat) {
     const rows=[[button('🖼 Browse memes','menu:entries')],[button('🏆 Leaderboard','menu:leaderboard'),button('ℹ️ Rules','menu:rules')]];
     if(this.isAdmin()) rows.push([button('➕ Add meme (admin)','admin:add')]);
@@ -71,8 +75,9 @@ export class Contest {
   }
   show(chat,id,origin) {
     const e=this.entry(id); if(!e) {this.send(chat,'That entry is not available.');return;}
-    if(origin?.photo) this.api('editMessageMedia',{chat_id:chat,message_id:origin.message_id,media:{type:'photo',media:e.photo_file_id,caption:this.caption(e),parse_mode:'HTML'},reply_markup:this.entryKeyboard(e)});
-    else this.photo(chat,e.photo_file_id,this.caption(e),this.entryKeyboard(e));
+    const type=e.media_type||'photo';
+    if(origin&&(origin.photo||origin.video||origin.animation)) this.api('editMessageMedia',{chat_id:chat,message_id:origin.message_id,media:{type,media:e.photo_file_id,caption:this.caption(e),parse_mode:'HTML'},reply_markup:this.entryKeyboard(e)});
+    else this.media(chat,type,e.photo_file_id,this.caption(e),this.entryKeyboard(e));
   }
   browse(chat) { const ids=this.ids(); ids.length ? this.show(chat,ids[0]) : this.send(chat,'No meme entries yet. Check back soon!'); }
   leaderboard(chat) {
@@ -84,14 +89,16 @@ export class Contest {
   }
   preview(chat) {
     const d=this.state.draft?.data;if(this.state.draft?.step!=='confirm'){this.send(chat,'No complete draft. Use /add.');return;}
-    this.photo(chat,d.photo_file_id,`<b>Review before publishing</b>\nX post: ${esc(d.tweet_url)}\nX creator: @${esc(d.x_username)}\nTelegram: @${esc(d.telegram_username)}`,keyboard([button('✅ Publish entry','admin:confirm'),button('❌ Cancel','admin:cancel')]));
+    this.media(chat,d.media_type||'photo',d.photo_file_id,`<b>Review before publishing</b>\nX post: ${esc(d.tweet_url)}\nX creator: @${esc(d.x_username)}\nTelegram: @${esc(d.telegram_username)}`,keyboard([button('✅ Publish entry','admin:confirm'),button('❌ Cancel','admin:cancel')]));
   }
   handleDraft(chat,message) {
     const draft=this.state.draft;if(!draft)return false;const {step,data}=draft;
     if(step==='confirm'){this.send(chat,'Tap Publish or Cancel on the preview.');return true;}
-    if(step==='photo'){
-      const photo=message.photo?.at(-1);if(!photo){this.send(chat,'Send the meme as a Telegram photo. /cancel to stop.');return true;}
-      this.draft('tweet',{...data,photo_file_id:photo.file_id});this.send(chat,'Step 2/4: Paste the original X post URL.');return true;
+    if(step==='media'||step==='photo'){
+      const photo=message.photo?.at(-1),video=message.video,animation=message.animation;
+      const media=photo?{type:'photo',file_id:photo.file_id}:video?{type:'video',file_id:video.file_id}:animation?{type:'animation',file_id:animation.file_id}:null;
+      if(!media){this.send(chat,'Send the meme as a Telegram photo, video, or GIF. /cancel to stop.');return true;}
+      this.draft('tweet',{...data,media_type:media.type,photo_file_id:media.file_id});this.send(chat,'Step 2/4: Paste the original X post URL.');return true;
     }
     try {
       const text=message.text||'';
@@ -110,7 +117,7 @@ export class Contest {
     if(['/leaderboard','/results'].includes(cmd)){this.leaderboard(chat);return;}
     if(cmd==='/rules'){this.rules(chat);return;}
     if(!this.isAdmin()){this.send(chat,'Organizer-only command. Try /start.');return;}
-    if(['/admin','/help'].includes(cmd)) this.send(chat,'<b>JOBBY Admin</b>\n/add — Add meme\n/cancel — Cancel draft\n/list — Entries\n/remove 12 — Hide\n/restore 12 — Restore\n/pause — Freeze voting\n/resume — Reopen\n/close — Close voting\n/results — Leaderboard\n/stats — Counters\n/share 12 — Entry link');
+    if(['/admin','/help'].includes(cmd)) this.send(chat,'<b>JOBBY Admin</b>\n/add — Add photo, video, or GIF meme\n/cancel — Cancel draft\n/list — Entries\n/remove 12 — Hide\n/restore 12 — Restore\n/pause — Freeze voting\n/resume — Reopen\n/close — Close voting\n/results — Leaderboard\n/stats — Counters\n/share 12 — Entry link');
     else if(cmd==='/add') this.startDraft(chat);
     else if(cmd==='/cancel'){this.clearDraft();this.send(chat,'Draft canceled. Nothing published.');}
     else if(['/pause','/resume','/close'].includes(cmd)){
@@ -142,8 +149,8 @@ export class Contest {
       else if(action==='admin:confirm'){
         if(this.state.draft?.step!=='confirm'){this.ack(id,'Draft already handled or expired.');return;}
         const d=this.state.draft.data,n=Math.max(0,...this.state.entries.map(e=>e.id))+1;
-        this.write('INSERT INTO entries(id,photo_file_id,tweet_url,x_username,telegram_username,created_by,created_at) VALUES(?,?,?,?,?,?,?)',n,d.photo_file_id,d.tweet_url,d.x_username,d.telegram_username,this.userId,now());
-        this.state.entries.push({...d,id:n,created_by:this.userId,active:1,votes:0,rating_count:0,average_stars:0});this.clearDraft();
+        this.write('INSERT INTO entries(id,photo_file_id,media_type,tweet_url,x_username,telegram_username,created_by,created_at) VALUES(?,?,?,?,?,?,?,?)',n,d.photo_file_id,d.media_type||'photo',d.tweet_url,d.x_username,d.telegram_username,this.userId,now());
+        this.state.entries.push({...d,media_type:d.media_type||'photo',id:n,created_by:this.userId,active:1,votes:0,rating_count:0,average_stars:0});this.clearDraft();
         this.ack(id,`Entry #${n} published`);this.send(cid,`✅ Entry #${n} published. /share ${n} for its link.`);this.show(cid,n);
       } else this.ack(id,'Unknown action.');return;
     }
@@ -162,7 +169,7 @@ export class Contest {
       const value=Number(m[3]),old=this.state.ratings[entryId];e.average_stars=(e.average_stars*e.rating_count-(old||0)+value)/(e.rating_count+(old?0:1));if(!old)e.rating_count++;
       this.state.ratings[entryId]=value;this.write('INSERT INTO ratings(user_id,entry_id,value,updated_at) VALUES(?,?,?,?) ON CONFLICT(user_id,entry_id) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at',this.userId,entryId,value,now());this.ack(id,'Rating saved!');
     }
-    if(c.message.photo)this.api('editMessageCaption',{chat_id:cid,message_id:c.message.message_id,caption:this.caption(e),parse_mode:'HTML',reply_markup:this.entryKeyboard(e)});
+    if(c.message.photo||c.message.video||c.message.animation)this.api('editMessageCaption',{chat_id:cid,message_id:c.message.message_id,caption:this.caption(e),parse_mode:'HTML',reply_markup:this.entryKeyboard(e)});
   }
   async handle(update) {
     if(update.callback_query){await this.callback(update.callback_query);return;}
