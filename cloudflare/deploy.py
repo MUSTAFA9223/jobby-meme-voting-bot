@@ -8,6 +8,7 @@ import sqlite3
 import subprocess
 import time
 import urllib.request
+import urllib.error
 import re
 
 ROOT = Path(__file__).resolve().parent
@@ -133,16 +134,24 @@ def main():
     subdomain = subdomain_info['subdomain']
     url = 'https://jobby-meme-voting.' + subdomain + '.workers.dev'
     healthy = False
+    health_diagnostic = 'no response'
     for _ in range(6):
         try:
             with urllib.request.urlopen(url + '/health', timeout=30) as response:
                 healthy = response.status == 200
+                health_diagnostic = 'HTTP ' + str(response.status)
+        except urllib.error.HTTPError as exc:
+            body = exc.read(160).decode('utf-8', 'replace')
+            health_diagnostic = 'HTTP ' + str(exc.code) + ': ' + re.sub(r'[^A-Za-z0-9 ._-]', '', body)
+            healthy = False
         except Exception:
+            health_diagnostic = 'transport failure'
             healthy = False
         if healthy:
             break
         time.sleep(3)
     if not healthy:
+        print('Worker health diagnostic: ' + health_diagnostic)
         raise RuntimeError('Worker health check failed after deployment; webhook unchanged')
     print('Worker health check passed.')
     telegram('setWebhook', {'url': url + '/webhook', 'secret_token': webhook_secret,
