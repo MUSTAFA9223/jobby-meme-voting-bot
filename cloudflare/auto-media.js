@@ -84,13 +84,21 @@ export default {
       if (raw.length > 1048576) return worker.fetch(request, env, ctx);
       const update = JSON.parse(raw);
       const enriched = await enrichForwardedXMedia(update, env);
-      if (enriched === update) return worker.fetch(request, env, ctx);
+      if (enriched === update) {
+        const response = await worker.fetch(request, env, ctx);
+        const headers = new Headers(response.headers);
+        headers.set('X-Jobby-X-Media', 'not-enriched');
+        return new Response(response.body, {status: response.status, statusText: response.statusText, headers});
+      }
       const headers = new Headers(request.headers);
       headers.delete('content-length');
       const transformed = new Request(request.url, {
         method: 'POST', headers, body: JSON.stringify(enriched),
       });
-      return worker.fetch(transformed, env, ctx);
+      const response = await worker.fetch(transformed, env, ctx);
+      const responseHeaders = new Headers(response.headers);
+      responseHeaders.set('X-Jobby-X-Media', 'enriched');
+      return new Response(response.body, {status: response.status, statusText: response.statusText, headers: responseHeaders});
     } catch {
       return worker.fetch(request, env, ctx);
     }

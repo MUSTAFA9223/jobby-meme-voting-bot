@@ -303,10 +303,12 @@ def main():
                 'User-Agent': 'Mozilla/5.0 (compatible; JOBBY-X-Media-Test/1.0)',
                 'X-Telegram-Bot-Api-Secret-Token': webhook_secret,
             })
+        media_result = 'missing-header'
         try:
             with urllib.request.urlopen(media_request, timeout=40) as response:
                 if response.status != 200:
                     raise RuntimeError()
+                media_result = response.headers.get('X-Jobby-X-Media', media_result)
         except Exception:
             raise RuntimeError('Live X media webhook test failed; private response suppressed') from None
         drafts = []
@@ -316,7 +318,8 @@ def main():
                 break
             time.sleep(2)
         if len(drafts) != 1 or drafts[0]['step'] != 'confirm':
-            raise RuntimeError('Live X media test did not prepare a complete draft')
+            draft_state = drafts[0]['step'] if len(drafts) == 1 else 'none-or-many'
+            raise RuntimeError('Live X media test did not prepare a complete draft; fetch=' + media_result + '; draft=' + draft_state)
         test_data = json.loads(drafts[0]['data'])
         parsed_media = urllib.parse.urlparse(test_data.get('photo_file_id', ''))
         if test_data.get('media_type') != 'photo' or parsed_media.scheme != 'https' or parsed_media.hostname != 'pbs.twimg.com':
