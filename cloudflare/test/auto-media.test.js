@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {enrichForwardedXMedia, fxMediaFromPayload} from '../auto-media.js';
+import {enrichForwardedXMedia, fxMediaFromPayload, safeFxRedirectTarget} from '../auto-media.js';
 
 const forwarded = (admin = 8355389673) => ({
   update_id: 1,
@@ -61,6 +61,17 @@ test('direct-media redirect works without either JSON API', async () => {
   };
   const result = await enrichForwardedXMedia(forwarded(), {JOBBY_ADMIN_IDS: '8355389673'}, fetcher);
   assert.equal(result.message.photo[0].file_id, 'https://pbs.twimg.com/media/direct.jpg?name=orig');
+});
+
+test('FxEmbed video redirect is safely unwrapped and classified as video', async () => {
+  const rawVideo = 'https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/1280x720/meme.mp4?tag=12';
+  const wrapper = `https://api.fxtwitter.com/2/go?url=${encodeURIComponent(rawVideo)}`;
+  const fetcher = async () => new Response(null, {status: 302, headers: {location: wrapper}});
+  const result = await enrichForwardedXMedia(forwarded(), {JOBBY_ADMIN_IDS: '8355389673'}, fetcher);
+  assert.equal(result.message.video.file_id, rawVideo);
+  assert.equal(result.message.photo, undefined);
+  assert.equal(safeFxRedirectTarget('https://api.fxtwitter.com/2/go?url=https%3A%2F%2Fevil.example%2Fmeme.mp4'), '');
+  assert.equal(safeFxRedirectTarget('https://evil.example/2/go?url=' + encodeURIComponent(rawVideo)), '');
 });
 
 test('non-admin and ordinary messages never call the external service', async () => {
