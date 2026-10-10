@@ -103,7 +103,7 @@ export class Contest {
   }
   destinationList(chat) {
     const rows=this.state.destinations;
-    if(!rows.length){this.send(chat,'No groups or channels are connected yet. Add the bot to a group or channel, then give it permission to post.');return;}
+    if(!rows.length){this.send(chat,'No groups or channels are connected yet.\n\nGroup: add the bot, then send /register in the group.\nChannel: add the bot as an admin with permission to post, then forward any channel post to this private chat.');return;}
     this.send(chat,'<b>Connected publishing destinations</b>\n\n'+rows.map((d,i)=>`${i+1}. ${esc(d.title)} — <code>${d.chat_id}</code> (${esc(d.chat_type)})`).join('\n'));
   }
   publishMenu(chat,entryId) {
@@ -157,7 +157,7 @@ export class Contest {
     if(['/leaderboard','/results'].includes(cmd)){this.leaderboard(chat);return;}
     if(cmd==='/rules'){this.rules(chat);return;}
     if(!this.isAdmin()){this.send(chat,'Organizer-only command. Try /start.');return;}
-    if(['/admin','/help'].includes(cmd)) this.send(chat,'<b>JOBBY Admin</b>\n/add — Add photo, video, or GIF meme\n/cancel — Cancel draft\n/list — Entries\n/publish 12 — Publish in a group/channel\n/destinations — Connected groups/channels\n/remove 12 — Hide\n/restore 12 — Restore\n/pause — Freeze voting\n/resume — Reopen\n/close — Close voting\n/results — Leaderboard\n/stats — Counters\n/share 12 — Private voting link');
+    if(['/admin','/help'].includes(cmd)) this.send(chat,'<b>JOBBY Admin</b>\n/add — Add photo, video, or GIF meme\n/cancel — Cancel draft\n/list — Entries\n/publish 12 — Publish in a group/channel\n/destinations — Connected groups/channels\n/register — Run inside a group to connect it\nForward a channel post here to connect that channel\n/remove 12 — Hide\n/restore 12 — Restore\n/pause — Freeze voting\n/resume — Reopen\n/close — Close voting\n/results — Leaderboard\n/stats — Counters\n/share 12 — Private voting link');
     else if(cmd==='/add') this.startDraft(chat);
     else if(cmd==='/cancel'){this.clearDraft();this.send(chat,'Draft canceled. Nothing published.');}
     else if(cmd==='/destinations')this.destinationList(chat);
@@ -235,6 +235,8 @@ export class Contest {
     if(update.callback_query){await this.callback(update.callback_query);return;}
     if(update.my_chat_member){const membership=update.my_chat_member,status=membership.new_chat_member?.status;this.setDestination(membership.chat,['member','administrator','creator'].includes(status));return;}
     const m=update.message||update.channel_post;if(!m?.chat?.id||!m.from?.id)return;
+    const forwardedChannel=m.forward_origin?.type==='channel'?m.forward_origin.chat:(m.forward_from_chat?.type==='channel'?m.forward_from_chat:null);
+    if(this.isAdmin()&&m.chat.type==='private'&&forwardedChannel){this.setDestination(forwardedChannel,true);this.send(m.chat.id,`✅ Channel connected: ${esc(forwardedChannel.title||forwardedChannel.id)}. Use /publish &lt;entry number&gt; to post voting.`);return;}
     if(m.text?.startsWith('/'))this.command(m);
     else if(this.isAdmin()&&m.chat.type==='private'&&this.handleDraft(m.chat.id,m))return;
     else if(m.chat.type==='private')this.send(m.chat.id,'Use /start to browse memes and vote. Only the organizer can submit entries.');
