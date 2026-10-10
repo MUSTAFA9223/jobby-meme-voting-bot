@@ -15,7 +15,9 @@ const post=(env,u,secret='test-secret')=>worker.fetch(new Request('https://test/
 const message=(id,text,admin=8355389673)=>({update_id:id,message:{message_id:id,chat:{id:admin,type:'private'},from:{id:admin},text}});
 const mediaMessage=(id,type,fileId,admin=8355389673)=>{const u=message(id,'',admin);u.message[type]=type==='photo'?[{file_id:fileId}]:{file_id:fileId};return u;};
 const cb=(id,data,user=44)=>({update_id:id,callback_query:{id:String(id),data,from:{id:user,username:'voter'},message:{message_id:99,chat:{id:user,type:'private'},photo:[{file_id:'photo'}]}}});
-function seed(db,id=1){db.prepare('INSERT INTO entries(id,photo_file_id,tweet_url,x_username,telegram_username,created_by,created_at) VALUES(?,?,?,?,?,?,?)').run(id,'photo',`https://x.com/creator/status/${id}`,'creator','creatorname',8355389673,'today');}
+const groupCb=(id,data,type='photo',user=44)=>({update_id:id,callback_query:{id:String(id),data,from:{id:user,username:'voter'},message:{message_id:99,chat:{id:-100123,type:'supergroup',title:'JOBBY Community'},[type]:type==='photo'?[{file_id:'public'}]:{file_id:'public'}}}});
+const membership=(id,chatId,title,type,status='administrator')=>({update_id:id,my_chat_member:{from:{id:8355389673},chat:{id:chatId,title,type},new_chat_member:{status}}});
+function seed(db,id=1,type='photo'){db.prepare('INSERT INTO entries(id,photo_file_id,media_type,tweet_url,x_username,telegram_username,created_by,created_at) VALUES(?,?,?,?,?,?,?,?)').run(id,`${type}-file`,type,`https://x.com/creator/status/${id}`,'creator','creatorname',8355389673,'today');}
 test('unauthenticated requests cannot write; malformed updates are rejected',async()=>{
  const {env,db}=fixture();assert.equal((await post(env,message(1,'/pause'),'wrong')).status,403);assert.equal((await post(env,{update_id:'1'})).status,400);assert.equal(db.prepare('SELECT COUNT(*) n FROM webhook_updates').get().n,0);
 });
@@ -34,6 +36,26 @@ test('video and GIF memes publish with the correct Telegram media methods',async
   assert.ok(sent.some(x=>x.method===method&&x.payload.caption?.includes('Review before publishing')));
   assert.ok(sent.some(x=>x.method===method&&x.payload.caption?.includes('JOBBY MEME CONTEST')));
  }
+});
+test('connected groups and channels appear in the publish menu and receive media voting posts',async()=>{
+ const {env,db}=fixture(),sent=[];globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
+ await post(env,membership(1,-100123,'JOBBY Community','supergroup'));
+ await post(env,membership(2,-100456,'JOBBY Channel','channel'));
+ assert.deepEqual(db.prepare('SELECT chat_type,COUNT(*) n FROM destinations GROUP BY chat_type ORDER BY chat_type').all().map(x=>({...x})),[{chat_type:'channel',n:1},{chat_type:'supergroup',n:1}]);
+ seed(db,1,'video');
+ await post(env,message(3,'/publish 1'));
+ const menu=sent.find(x=>x.method==='sendMessage'&&x.payload.text.includes('Choose where'));
+ assert.ok(menu.payload.reply_markup.inline_keyboard.flat().some(x=>x.callback_data==='admin:post:1:-100123'));
+ await post(env,cb(4,'admin:post:1:-100123',8355389673));
+ const published=sent.find(x=>x.method==='sendVideo'&&x.payload.chat_id===-100123);
+ assert.ok(published);assert.match(published.payload.caption,/Vote and rate directly below/);assert.ok(!published.payload.caption.includes('Your vote'));
+});
+test('members vote and rate directly on a shared group or channel post',async()=>{
+ const {env,db}=fixture(),sent=[];seed(db,1,'animation');globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
+ assert.equal((await post(env,groupCb(1,'vote:1','animation'))).status,200);
+ assert.equal((await post(env,groupCb(2,'rate:1:5','animation'))).status,200);
+ assert.deepEqual({...db.prepare('SELECT user_id,entry_id FROM votes').get()},{user_id:44,entry_id:1});assert.equal(db.prepare('SELECT value FROM ratings').get().value,5);
+ const edits=sent.filter(x=>x.method==='editMessageCaption');assert.equal(edits.length,2);assert.ok(edits.every(x=>x.payload.caption.includes('Vote and rate directly below.')&&!x.payload.caption.includes('Your vote')));
 });
 test('one vote across entries; ratings update; paused and non-admin commands are enforced',async()=>{
  const {env,db}=fixture();seed(db);seed(db,2);globalThis.fetch=async()=>Response.json({ok:true,result:{}});
