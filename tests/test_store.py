@@ -1,4 +1,7 @@
 import unittest
+import sqlite3
+import tempfile
+from pathlib import Path
 
 from jobby_bot.store import Store
 from jobby_bot.validation import normalize_x_handle, normalize_telegram_handle, normalize_tweet
@@ -22,14 +25,16 @@ class StoreTests(unittest.TestCase):
         self.assertTrue(self.store.set_active(self.b, True))
         self.assertEqual(self.store.entry_ids(), [1, 2])
 
-    def test_one_global_vote_can_change(self):
+    def test_one_fixed_vote_per_meme_and_can_vote_for_all(self):
         self.assertEqual(self.store.cast_vote(99, self.a), "saved")
         self.assertEqual(self.store.cast_vote(99, self.a), "same")
-        self.assertEqual(self.store.cast_vote(99, self.b), "changed")
-        self.assertEqual(self.store.vote_for(99), self.b)
+        self.assertEqual(self.store.cast_vote(99, self.b), "saved")
+        self.assertEqual(self.store.cast_vote(99, self.b), "same")
+        self.assertTrue(self.store.has_voted(99, self.a))
+        self.assertTrue(self.store.has_voted(99, self.b))
         standings = self.store.standings()
-        self.assertEqual([(r["id"], r["votes"]) for r in standings], [(self.b, 1), (self.a, 0)])
-        self.assertEqual(self.store.counts()["voters"], 1)
+        self.assertEqual([(r["id"], r["votes"]) for r in standings], [(self.a, 1), (self.b, 1)])
+        self.assertEqual(self.store.counts()["voters"], 2)
 
     def test_ratings_can_be_changed_but_not_duplicated(self):
         self.assertEqual(self.store.rate(99, self.a, 1), "saved")
@@ -75,6 +80,35 @@ class StoreTests(unittest.TestCase):
         self.store.rate(101, self.a, 4)
         self.store.rate(102, self.b, 5)
         self.assertEqual(self.store.standings()[0]["id"], self.b)
+
+    def test_old_single_choice_votes_are_preserved_during_migration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            filename = str(Path(directory) / "legacy.sqlite3")
+            db = sqlite3.connect(filename)
+            db.executescript("""
+                CREATE TABLE entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, photo_file_id TEXT NOT NULL,
+                    tweet_url TEXT NOT NULL, x_username TEXT NOT NULL,
+                    telegram_username TEXT NOT NULL, created_by INTEGER NOT NULL,
+                    created_at TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1
+                );
+                CREATE TABLE votes (
+                    user_id INTEGER PRIMARY KEY, entry_id INTEGER NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                INSERT INTO entries VALUES
+                    (1,'a','https://x.com/a/status/1','a','aaaaa',1,'now',1),
+                    (2,'b','https://x.com/b/status/2','b','bbbbb',1,'now',1);
+                INSERT INTO votes VALUES (99,1,'now');
+            """)
+            db.close()
+            migrated = Store(filename)
+            try:
+                self.assertTrue(migrated.has_voted(99, 1))
+                self.assertEqual(migrated.cast_vote(99, 2), "saved")
+                self.assertTrue(migrated.has_voted(99, 2))
+            finally:
+                migrated.close()
 
 
 class ValidationTests(unittest.TestCase):

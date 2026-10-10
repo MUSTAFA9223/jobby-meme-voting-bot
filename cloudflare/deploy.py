@@ -92,6 +92,33 @@ def main():
     entry_columns = cf(endpoint, {'sql': 'PRAGMA table_info(entries)'})[0]['results']
     if not any(column['name'] == 'media_type' for column in entry_columns):
         cf(endpoint, {'sql': "ALTER TABLE entries ADD COLUMN media_type TEXT NOT NULL DEFAULT 'photo' CHECK(media_type IN ('photo','video','animation'))"})
+    vote_columns = cf(endpoint, {'sql': 'PRAGMA table_info(votes)'})[0]['results']
+    vote_primary_key = [column['name'] for column in sorted(
+        (column for column in vote_columns if column['pk']), key=lambda column: column['pk'])]
+    legacy_votes = cf(endpoint, {'sql': "SELECT name FROM sqlite_master WHERE type='table' AND name='votes_single_choice'"})[0]['results']
+    if vote_primary_key == ['user_id', 'entry_id'] and legacy_votes:
+        # Resume safely if a previous deployment stopped partway through the
+        # table replacement.
+        cf(endpoint, {'sql': '''INSERT OR IGNORE INTO votes(user_id,entry_id,updated_at)
+            SELECT user_id,entry_id,updated_at FROM votes_single_choice'''})
+        cf(endpoint, {'sql': 'DROP INDEX IF EXISTS idx_votes_entry'})
+        cf(endpoint, {'sql': 'DROP TABLE votes_single_choice'})
+        cf(endpoint, {'sql': 'CREATE INDEX IF NOT EXISTS idx_votes_entry ON votes(entry_id)'})
+    if vote_primary_key != ['user_id', 'entry_id']:
+        # Preserve every existing vote while changing from one global vote to
+        # one permanent vote per account and meme. Reruns skip this migration.
+        cf(endpoint, {'sql': 'DROP INDEX IF EXISTS idx_votes_entry'})
+        cf(endpoint, {'sql': 'ALTER TABLE votes RENAME TO votes_single_choice'})
+        cf(endpoint, {'sql': '''CREATE TABLE votes (
+            user_id INTEGER NOT NULL,
+            entry_id INTEGER NOT NULL REFERENCES entries(id),
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(user_id,entry_id)
+        )'''})
+        cf(endpoint, {'sql': '''INSERT OR IGNORE INTO votes(user_id,entry_id,updated_at)
+            SELECT user_id,entry_id,updated_at FROM votes_single_choice'''})
+        cf(endpoint, {'sql': 'DROP TABLE votes_single_choice'})
+        cf(endpoint, {'sql': 'CREATE INDEX idx_votes_entry ON votes(entry_id)'})
     # A marker makes reruns safe. Never replace an existing live contest.
     marker = cf(endpoint, {'sql': "SELECT value FROM config WHERE key='github_migrated'"})[0]['results']
     if not marker:

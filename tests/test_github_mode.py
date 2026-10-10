@@ -54,6 +54,6 @@ class GitHubRunnerTests(unittest.TestCase):
         bot.handle_callback({'id':'expired','data':'vote:1','from': {'id': 333, 'username': 'voter'},
                              'message': {'message_id':1, 'photo':[{'file_id':'1'}],
                               'chat':{'type':'private','id':333}}})
-        self.assertEqual(store.vote_for(333),1)
+        self.assertTrue(store.has_voted(333,1))
         self.assertTrue(any(c[0] == 'send' and 'Vote recorded' in c[2] for c in api.calls))
         store.close()

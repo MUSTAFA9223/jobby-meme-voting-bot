@@ -39,7 +39,7 @@ export class Contest {
     const result = await env.DB.batch(queries.map((q,i) => i < 2 || i === 5 ? env.DB.prepare(q) : env.DB.prepare(q).bind(userId)));
     return new Contest(env, {entries: result[0].results, config: Object.fromEntries(result[1].results.map(r=>[r.key,r.value])),
       draft: result[2].results[0] ? {step:result[2].results[0].step,data:JSON.parse(result[2].results[0].data)} : null,
-      vote:result[3].results[0]?.entry_id ?? null, ratings:Object.fromEntries(result[4].results.map(r=>[r.entry_id,r.value])),
+      votes:new Set(result[3].results.map(r=>r.entry_id)), ratings:Object.fromEntries(result[4].results.map(r=>[r.entry_id,r.value])),
       destinations:result[5].results}, userId);
   }
   write(sql, ...args) { this.sql.push(this.env.DB.prepare(sql).bind(...args)); }
@@ -72,10 +72,10 @@ export class Contest {
   welcome(chat) {
     const rows=[[button('🖼 Browse memes','menu:entries')],[button('🏆 Leaderboard','menu:leaderboard'),button('ℹ️ Rules','menu:rules')]];
     if(this.isAdmin()) rows.push([button('➕ Add meme (admin)','admin:add')]);
-    this.send(chat,'🏆 <b>JOBBY Meme Voting</b>\n\nBrowse memes, rate creativity from 1–5 stars, and cast ONE contest vote for your favorite. You can change it before voting closes.\nOnly the organizer can submit entries.',{inline_keyboard:rows});
+    this.send(chat,'🏆 <b>JOBBY Meme Voting</b>\n\nBrowse the memes and vote once for every meme you support. Each vote is final and cannot be added twice.\nOnly the organizer can submit entries.',{inline_keyboard:rows});
   }
-  rules(chat) { this.send(chat,`<b>Contest rules</b>\n• One contest vote per Telegram account across all memes.\n• One 1–5 star rating per meme.\n• You can change votes and ratings while voting is open.\n• Votes rank first; star averages break ties.\n• Organizers upload memes and original X links.\n• Status: <b>${esc(this.status.toUpperCase())}</b>.\nPlease vote fairly.`); }
-  caption(e) { return `🏆 <b>JOBBY MEME CONTEST — #${String(e.id).padStart(3,'0')}</b>\n\n🐦 X creator: <b>@${esc(e.x_username)}</b>\n💬 Telegram: <b>@${esc(e.telegram_username)}</b>\n🔗 Tweet: <a href="${esc(e.tweet_url)}">View original post on X</a>\n\n🗳 Votes: <b>${e.votes}</b> | ⭐ Rating: <b>${Number(e.average_stars).toFixed(2)}/5</b> (${e.rating_count} ratings)\nContest: <b>${esc(this.status.toUpperCase())}</b>\n\nYour vote: <b>${this.state.vote ? '#'+this.state.vote : 'None'}</b> | Your rating: <b>${this.state.ratings[e.id] || '—'}</b>`; }
+  rules(chat) { this.send(chat,`<b>Contest rules</b>\n• Each Telegram account can vote once for every meme.\n• A recorded vote is final and cannot be added twice or changed.\n• One 1–5 star rating per meme; ratings can be updated while voting is open.\n• Votes rank first; star averages break ties.\n• Organizers upload memes and original X links.\n• Status: <b>${esc(this.status.toUpperCase())}</b>.\nPlease vote fairly.`); }
+  caption(e) { return `🏆 <b>JOBBY MEME CONTEST — #${String(e.id).padStart(3,'0')}</b>\n\n🐦 X creator: <b>@${esc(e.x_username)}</b>\n💬 Telegram: <b>@${esc(e.telegram_username)}</b>\n🔗 Tweet: <a href="${esc(e.tweet_url)}">View original post on X</a>\n\n🗳 Votes: <b>${e.votes}</b> | ⭐ Rating: <b>${Number(e.average_stars).toFixed(2)}/5</b> (${e.rating_count} ratings)\nContest: <b>${esc(this.status.toUpperCase())}</b>\n\nYour vote: <b>${this.state.votes.has(e.id) ? 'Recorded' : 'Not voted'}</b> | Your rating: <b>${this.state.ratings[e.id] || '—'}</b>`; }
   publicCaption(e) { return `🏆 <b>JOBBY MEME CONTEST — #${String(e.id).padStart(3,'0')}</b>\n\n🐦 X creator: <b>@${esc(e.x_username)}</b>\n💬 Telegram: <b>@${esc(e.telegram_username)}</b>\n🔗 Tweet: <a href="${esc(e.tweet_url)}">View original post on X</a>\n\n🗳 Votes: <b>${e.votes}</b> | ⭐ Rating: <b>${Number(e.average_stars).toFixed(2)}/5</b> (${e.rating_count} ratings)\nContest: <b>${esc(this.status.toUpperCase())}</b>\n\nVote and rate directly below.`; }
   entryKeyboard(e) {
     const ids=this.ids(), i=ids.indexOf(e.id), before=ids[(i-1+ids.length)%ids.length], after=ids[(i+1)%ids.length];
@@ -222,9 +222,9 @@ export class Contest {
     if((c.from.username||'').toLowerCase()===e.telegram_username.toLowerCase()){this.ack(id,'Creators cannot vote for their own meme.');return;}
     if(this.status!=='open'){this.ack(id,'Voting and ratings are closed.');return;}
     if(m[1]==='vote'){
-      const prior=this.state.vote;this.ack(id,prior===entryId?'You already voted for this meme.':prior?'Vote changed!':'Vote recorded!');
-      if(prior!==entryId){const old=this.entry(prior,false);if(old)old.votes--;e.votes++;this.state.vote=entryId;
-        this.write('INSERT INTO votes(user_id,entry_id,updated_at) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET entry_id=excluded.entry_id,updated_at=excluded.updated_at',this.userId,entryId,now());}
+      const voted=this.state.votes.has(entryId);this.ack(id,voted?'You already voted for this meme.':'Vote recorded!');
+      if(!voted){e.votes++;this.state.votes.add(entryId);
+        this.write('INSERT OR IGNORE INTO votes(user_id,entry_id,updated_at) VALUES(?,?,?)',this.userId,entryId,now());}
     } else {
       const value=Number(m[3]),old=this.state.ratings[entryId];e.average_stars=(e.average_stars*e.rating_count-(old||0)+value)/(e.rating_count+(old?0:1));if(!old)e.rating_count++;
       this.state.ratings[entryId]=value;this.write('INSERT INTO ratings(user_id,entry_id,value,updated_at) VALUES(?,?,?,?) ON CONFLICT(user_id,entry_id) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at',this.userId,entryId,value,now());this.ack(id,'Rating saved!');

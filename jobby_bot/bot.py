@@ -58,9 +58,8 @@ class MemeBot:
     def welcome(self, chat_id: int, is_admin: bool):
         text = (
             "🏆 <b>JOBBY Meme Voting</b>\n\n"
-            "Explore official JOBBY meme entries, rate their creativity from 1–5 stars, "
-            "and cast ONE contest vote for your favorite. You can change your choice "
-            "before voting closes.\n\n"
+            "Explore official JOBBY meme entries and vote once for every meme you support. "
+            "Each recorded vote is final and cannot be added twice.\n\n"
             "Only the contest organizer can submit entries."
         )
         rows = [
@@ -76,9 +75,10 @@ class MemeBot:
         status = self.store.status()
         self.api.send(chat_id,
             "<b>Contest rules</b>\n"
-            "• One active contest vote per Telegram account, across all entries.\n"
+            "• Each Telegram account can vote once for every meme.\n"
+            "• A recorded vote is final and cannot be added twice or changed.\n"
             "• Each meme can also receive one 1–5 star rating per account.\n"
-            "• You can change your vote or rating while voting is open.\n"
+            "• Ratings can be changed while voting is open.\n"
             "• Vote counts rank entries first; star averages break ties.\n"
             "• Organizers upload the memes and original X post links.\n"
             f"• Voting status: <b>{esc(status.upper())}</b>.\n\n"
@@ -96,9 +96,9 @@ class MemeBot:
                 f"({rating_count} ratings)\n"
                 f"Contest: <b>{esc(self.store.status().upper())}</b>")
         if user_id is not None:
-            current_vote = self.store.vote_for(user_id)
+            current_vote = self.store.has_voted(user_id, row["id"])
             current_stars = self.store.rating_for(user_id, row["id"])
-            text += (f"\n\nYour vote: <b>{('#' + str(current_vote)) if current_vote else 'None'}</b>"
+            text += (f"\n\nYour vote: <b>{'Recorded' if current_vote else 'Not voted'}</b>"
                      f"  |  Your rating: <b>{str(current_stars) if current_stars else '—'}</b>")
         return text
 
@@ -414,7 +414,7 @@ class MemeBot:
                 return
             if chunks[0] == "vote" and len(chunks) == 2:
                 result = self.store.cast_vote(user_id, entry_id)
-                messages = {"saved": "Vote recorded!", "changed": "Vote changed!",
+                messages = {"saved": "Vote recorded!",
                             "same": "You already voted for this meme.", "closed": "Voting is closed.",
                             "missing": "Entry unavailable."}
             elif (chunks[0] == "rate" and len(chunks) == 3

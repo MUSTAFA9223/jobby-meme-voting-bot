@@ -33,9 +33,10 @@ class Store:
                 active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
             );
             CREATE TABLE IF NOT EXISTS votes (
-                user_id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
                 entry_id INTEGER NOT NULL REFERENCES entries(id),
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, entry_id)
             );
             CREATE INDEX IF NOT EXISTS idx_votes_entry ON votes(entry_id);
             CREATE TABLE IF NOT EXISTS ratings (
@@ -58,6 +59,22 @@ class Store:
             );
             INSERT OR IGNORE INTO config(key, value) VALUES ('status', 'open');
         """)
+        primary_key = [row[1] for row in sorted(
+            (row for row in self.db.execute("PRAGMA table_info(votes)") if row[5]),
+            key=lambda row: row[5])]
+        if primary_key != ["user_id", "entry_id"]:
+            self.db.execute("DROP INDEX IF EXISTS idx_votes_entry")
+            self.db.execute("ALTER TABLE votes RENAME TO votes_single_choice")
+            self.db.execute("""CREATE TABLE votes (
+                user_id INTEGER NOT NULL,
+                entry_id INTEGER NOT NULL REFERENCES entries(id),
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, entry_id)
+            )""")
+            self.db.execute("""INSERT OR IGNORE INTO votes(user_id, entry_id, updated_at)
+                SELECT user_id, entry_id, updated_at FROM votes_single_choice""")
+            self.db.execute("DROP TABLE votes_single_choice")
+            self.db.execute("CREATE INDEX idx_votes_entry ON votes(entry_id)")
         self.db.commit()
 
     def close(self):
@@ -105,19 +122,17 @@ class Store:
             return cur.rowcount > 0
 
     def cast_vote(self, user_id: int, entry_id: int) -> str:
-        """Exactly one current contest vote per Telegram account, across all entries."""
+        """Record one permanent vote per Telegram account and meme."""
         with self.db:
             if self.status() != "open":
                 return "closed"
             if not self.entry(entry_id):
                 return "missing"
-            prior = self.vote_for(user_id)
-            if prior == entry_id:
+            if self.has_voted(user_id, entry_id):
                 return "same"
-            self.db.execute("""INSERT INTO votes(user_id, entry_id, updated_at) VALUES (?, ?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET entry_id=excluded.entry_id,
-                updated_at=excluded.updated_at""", (user_id, entry_id, now()))
-            return "changed" if prior is not None else "saved"
+            self.db.execute("INSERT OR IGNORE INTO votes(user_id, entry_id, updated_at) VALUES (?, ?, ?)",
+                            (user_id, entry_id, now()))
+            return "saved"
 
     def rate(self, user_id: int, entry_id: int, value: int) -> str:
         if value not in range(1, 6):
@@ -136,6 +151,12 @@ class Store:
     def vote_for(self, user_id: int) -> int | None:
         row = self.db.execute("SELECT entry_id FROM votes WHERE user_id=?", (user_id,)).fetchone()
         return row[0] if row else None
+
+    def has_voted(self, user_id: int, entry_id: int) -> bool:
+        row = self.db.execute(
+            "SELECT 1 FROM votes WHERE user_id=? AND entry_id=?", (user_id, entry_id)
+        ).fetchone()
+        return row is not None
 
     def rating_for(self, user_id: int, entry_id: int) -> int | None:
         row = self.db.execute("SELECT value FROM ratings WHERE user_id=? AND entry_id=?", (user_id, entry_id)).fetchone()

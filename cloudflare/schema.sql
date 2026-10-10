@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS entries (
  active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1))
 );
 CREATE TABLE IF NOT EXISTS votes (
- user_id INTEGER PRIMARY KEY, entry_id INTEGER NOT NULL REFERENCES entries(id), updated_at TEXT NOT NULL
+ user_id INTEGER NOT NULL, entry_id INTEGER NOT NULL REFERENCES entries(id), updated_at TEXT NOT NULL,
+ PRIMARY KEY(user_id,entry_id)
 );
 CREATE INDEX IF NOT EXISTS idx_votes_entry ON votes(entry_id);
 CREATE TABLE IF NOT EXISTS ratings (

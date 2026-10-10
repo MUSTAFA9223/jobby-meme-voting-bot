@@ -65,12 +65,14 @@ test('members vote and rate directly on a shared group or channel post',async()=
  assert.deepEqual({...db.prepare('SELECT user_id,entry_id FROM votes').get()},{user_id:44,entry_id:1});assert.equal(db.prepare('SELECT value FROM ratings').get().value,5);
  const edits=sent.filter(x=>x.method==='editMessageCaption');assert.equal(edits.length,2);assert.ok(edits.every(x=>x.payload.caption.includes('Vote and rate directly below.')&&!x.payload.caption.includes('Your vote')));
 });
-test('one vote across entries; ratings update; paused and non-admin commands are enforced',async()=>{
+test('one fixed vote per meme; users can vote for every entry; ratings and permissions are enforced',async()=>{
  const {env,db}=fixture();seed(db);seed(db,2);globalThis.fetch=async()=>Response.json({ok:true,result:{}});
- for(const [i,data] of ['vote:1','vote:2','rate:2:5','rate:2:3'].entries())assert.equal((await post(env,cb(i+1,data))).status,200);
- assert.deepEqual({...db.prepare('SELECT user_id,entry_id FROM votes').get()},{user_id:44,entry_id:2});assert.equal(db.prepare('SELECT value FROM ratings').get().value,3);
+ for(const [i,data] of ['vote:1','vote:1','vote:2','vote:2','rate:2:5','rate:2:3'].entries())assert.equal((await post(env,cb(i+1,data))).status,200);
+ assert.deepEqual(db.prepare('SELECT user_id,entry_id FROM votes ORDER BY entry_id').all().map(x=>({...x})),[{user_id:44,entry_id:1},{user_id:44,entry_id:2}]);
+ assert.deepEqual(db.prepare('SELECT entry_id,COUNT(*) n FROM votes GROUP BY entry_id ORDER BY entry_id').all().map(x=>({...x})),[{entry_id:1,n:1},{entry_id:2,n:1}]);
+ assert.equal(db.prepare('SELECT value FROM ratings').get().value,3);
  await post(env,message(5,'/pause',44));assert.equal(db.prepare("SELECT value FROM config WHERE key='status'").get().value,'open');
- await post(env,message(6,'/pause'));await post(env,cb(7,'vote:1'));assert.equal(db.prepare('SELECT entry_id FROM votes').get().entry_id,2);
+ await post(env,message(7,'/pause'));await post(env,cb(8,'vote:1',45));assert.equal(db.prepare('SELECT COUNT(*) n FROM votes').get().n,2);
 });
 test('failed delivery retries the outbox without repeating draft mutations',async()=>{
  const {env,db}=fixture();globalThis.fetch=async()=>Response.json({ok:false,error_code:500},{status:500});

@@ -73,7 +73,7 @@ class BotTests(unittest.TestCase):
         self.assertEqual(entry["photo_file_id"], "telegram-photo-file-id")
         self.callback(200, "vote:1")
         self.callback(200, "rate:1:5")
-        self.assertEqual(self.db.vote_for(200), 1)
+        self.assertTrue(self.db.has_voted(200, 1))
         self.assertEqual(self.db.rating_for(200, 1), 5)
         self.assertEqual(self.db.standings()[0]["votes"], 1)
         self.assertEqual(self.db.standings()[0]["average_stars"], 5)
@@ -99,10 +99,10 @@ class BotTests(unittest.TestCase):
         self.db.create_entry("photo", "https://x.com/user/status/2", "artist", "artisttelegram", 444)
         self.api.member_result = {"status": "left"}
         self.callback(101, "vote:1")
-        self.assertIsNone(self.db.vote_for(101))
+        self.assertFalse(self.db.has_voted(101, 1))
         self.api.member_result = {"status": "member"}
         self.callback(101, "vote:1")
-        self.assertEqual(self.db.vote_for(101), 1)
+        self.assertTrue(self.db.has_voted(101, 1))
 
     def test_nav_edits_existing_photo_message(self):
         self.db.create_entry("photo", "https://x.com/user/status/2", "artist", "artisttelegram", 444)
@@ -129,10 +129,10 @@ class BotTests(unittest.TestCase):
         self.db.create_entry("photo", "https://x.com/user/status/2", "artist", "artisttelegram", 444)
         self.message(444, "/close")
         self.callback(101, "vote:1")
-        self.assertIsNone(self.db.vote_for(101))
+        self.assertFalse(self.db.has_voted(101, 1))
         self.message(444, "/resume")
         self.callback(101, "vote:1")
-        self.assertEqual(self.db.vote_for(101), 1)
+        self.assertTrue(self.db.has_voted(101, 1))
 
 
 if __name__ == "__main__":

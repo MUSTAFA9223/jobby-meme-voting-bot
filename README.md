@@ -1,12 +1,12 @@
 # JOBBY Meme Voting Bot
 
-A standalone, admin-curated Telegram meme contest. Organizer manually adds an image, original X post URL, X username, and Telegram username. Users browse entries, vote for ONE meme in the entire contest, and separately give each meme a 1–5-star rating. It does **not** post to JOBBY's main website, existing Telegram groups, or existing bots.
+A standalone, admin-curated Telegram meme contest. The organizer adds each meme, its original X post URL, X username, and Telegram username. Users can vote once for every meme and separately give each meme a 1–5-star rating.
 
 ## Features
 
 - Private admin upload wizard: photo → original X post → X creator → Telegram creator → publish confirmation.
 - Organized cards with the meme, source link, X + Telegram accounts, vote count and average rating.
-- Exactly one contest vote **per Telegram user ID**, which can be changed before voting ends.
+- Exactly one permanent vote **per Telegram user ID and meme**; users may vote for every meme, but repeated taps never add another vote.
 - One rating **per Telegram user ID per entry**, editable during the contest.
 - Leaderboard: number of votes is primary, average stars and number of ratings are tiebreakers.
 - Entry share links, next/previous browsing, admin entry hiding/restoring, pause/resume/close, and counters.
@@ -97,7 +97,7 @@ Users can send `/start`, `/entries`, `/leaderboard`, `/rules`, and `/myid`. The 
 
 ## Voting policy
 
-1. Every Telegram account has just **one current vote across all visible contest entries**. Casting a vote for another entry switches it; it does not create another vote.
+1. Every Telegram account can vote once for **each visible contest entry**. A recorded vote is permanent and repeated taps do not increase the count.
 2. Every account can star-rate multiple entries, but only **once per entry**. A repeated rating updates the same record.
 3. Votes and ratings are locked by `/pause` or `/close`.
 4. An entry creator cannot vote/rate their own meme if their **current Telegram username** matches the stored author username; this is an advisory check, not a strong identity verification scheme.
