@@ -249,6 +249,40 @@ def main():
     print('Worker webhook self-test passed; organizer welcome delivered through the Worker.')
     if os.environ.get('JOBBY_X_MEDIA_SMOKE', '').lower() == 'true':
         media_test_id = self_test_id + 1
+        # A previous manual attempt may have left a draft open. Start the
+        # one-time smoke test from a known state and wait for D1's REST API to
+        # observe the cleanup before sending the forwarded post.
+        reset_test = {
+            'update_id': media_test_id,
+            'message': {
+                'message_id': media_test_id,
+                'date': int(time.time()),
+                'chat': {'id': 8355389673, 'type': 'private'},
+                'from': {'id': 8355389673, 'is_bot': False, 'first_name': 'JOBBY Admin'},
+                'text': '/cancel',
+            },
+        }
+        reset_request = urllib.request.Request(url + '/webhook',
+            data=json.dumps(reset_test).encode(), method='POST', headers={
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (compatible; JOBBY-X-Media-Test/1.0)',
+                'X-Telegram-Bot-Api-Secret-Token': webhook_secret,
+            })
+        try:
+            with urllib.request.urlopen(reset_request, timeout=30) as response:
+                if response.status != 200:
+                    raise RuntimeError()
+        except Exception:
+            raise RuntimeError('Live X media reset failed; private response suppressed') from None
+        for _ in range(10):
+            existing = cf(endpoint, {'sql': 'SELECT COUNT(*) AS n FROM drafts WHERE admin_id=?', 'params': [8355389673]})[0]['results'][0]['n']
+            if not existing:
+                break
+            time.sleep(2)
+        if existing:
+            raise RuntimeError('Live X media reset was not visible in time')
+
+        media_test_id += 1
         media_test = {
             'update_id': media_test_id,
             'message': {
@@ -275,7 +309,12 @@ def main():
                     raise RuntimeError()
         except Exception:
             raise RuntimeError('Live X media webhook test failed; private response suppressed') from None
-        drafts = cf(endpoint, {'sql': 'SELECT step,data FROM drafts WHERE admin_id=?', 'params': [8355389673]})[0]['results']
+        drafts = []
+        for _ in range(10):
+            drafts = cf(endpoint, {'sql': 'SELECT step,data FROM drafts WHERE admin_id=?', 'params': [8355389673]})[0]['results']
+            if len(drafts) == 1 and drafts[0]['step'] == 'confirm':
+                break
+            time.sleep(2)
         if len(drafts) != 1 or drafts[0]['step'] != 'confirm':
             raise RuntimeError('Live X media test did not prepare a complete draft')
         test_data = json.loads(drafts[0]['data'])
@@ -304,7 +343,12 @@ def main():
                     raise RuntimeError()
         except Exception:
             raise RuntimeError('Live X media cleanup failed; private response suppressed') from None
-        remaining = cf(endpoint, {'sql': 'SELECT COUNT(*) AS n FROM drafts WHERE admin_id=?', 'params': [8355389673]})[0]['results'][0]['n']
+        remaining = 1
+        for _ in range(10):
+            remaining = cf(endpoint, {'sql': 'SELECT COUNT(*) AS n FROM drafts WHERE admin_id=?', 'params': [8355389673]})[0]['results'][0]['n']
+            if not remaining:
+                break
+            time.sleep(2)
         if remaining:
             raise RuntimeError('Live X media test draft cleanup failed')
         print('Live X image fetch, Telegram preview delivery, and draft cleanup passed.')
