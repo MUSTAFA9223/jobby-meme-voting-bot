@@ -48,8 +48,10 @@ def telegram(method, payload):
 
 def wrangler(*args, input_text=None):
     # CLI output can contain URLs or user data. Only emit our fixed status messages.
+    command_env = os.environ.copy()
+    command_env['CLOUDFLARE_ACCOUNT_ID'] = ACCOUNT
     result = subprocess.run(['npx', '--no-install', 'wrangler', *args], cwd=ROOT,
-        input=input_text, text=True, capture_output=True)
+        input=input_text, text=True, capture_output=True, env=command_env)
     if result.returncode:
         raise RuntimeError('Wrangler operation failed; credential-bearing output suppressed')
 
