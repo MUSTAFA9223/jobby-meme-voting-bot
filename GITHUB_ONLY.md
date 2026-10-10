@@ -12,16 +12,17 @@ This edition uses **GitHub Actions** to check Telegram periodically. It does **n
 
 ## Setup (new dedicated GitHub repository)
 
-1. Create an empty **new dedicated repository** (`jobby-meme-voting-bot`) under your GitHub account. This bot should not be mixed with the live `jobby-site` repository.
-2. Upload the **contents** of this ZIP to the **default branch** (usually `main`), including `.github/workflows/jobby-poll.yml`, `jobby_bot/`, and `tests/`. **Scheduled workflows only run from the default branch.**
+1. Repository created: `MUSTAFA9223/jobby-meme-voting-bot` (separate from `jobby-site`).
+2. Source, tests and workflows are now uploaded to `main`. **Scheduled workflows only run from the default branch.**
 3. Create a Telegram bot with [@BotFather](https://t.me/BotFather) using `/newbot`. Keep its token private.
 4. GitHub repo → **Settings → Secrets and variables → Actions → New repository secret**; set:
    - `JOBBY_BOT_TOKEN` — private Telegram bot token from BotFather.
    - `JOBBY_ADMIN_IDS` — comma-separated numeric Telegram IDs authorized to upload memes (for example, `123456789`). Obtain your ID from @userinfobot or via `/myid` after initial start.
    - `JOBBY_STATE_KEY` — a **new unique 32+ character random secret** used for SQLite encryption. Store a backup privately; losing it loses access to old contest data. Generate, for example, with `openssl rand -hex 32` on a trusted computer.
 5. Optional: **Settings → Secrets and variables → Actions → Variables**: `JOBBY_REQUIRED_CHAT_ID=@JOBBYChat` to require community membership (may require bot admin permissions in the group). By default this is empty.
-6. Repo → **Actions → JOBBY Meme Voting — GitHub-only polling → Run workflow**, then inspect run logs (they should not reveal tokens). Scheduled runs will use the workflow from the default branch.
-7. DM the bot `/start`, then `/add` from the Telegram account whose numeric ID appears in `JOBBY_ADMIN_IDS`.
+6. Repo → **Settings → Secrets and variables → Actions → Variables → New repository variable**; set `JOBBY_ENABLED` to `true` only **after** configuring all three secrets. This gate prevents unnecessary scheduled runs before setup.
+7. Repo → **Actions → JOBBY Meme Voting — GitHub-only polling → Run workflow**, then inspect run logs (they should not reveal tokens). Scheduled runs will use the workflow from the default branch.
+8. DM the bot `/start`, then `/add` from the Telegram account whose numeric ID appears in `JOBBY_ADMIN_IDS`.
 
 ## Verify
 
