@@ -1,0 +1,9 @@
+{
+  "name": "jobby-meme-voting",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "observability": {"enabled": false},
+  "vars": {"JOBBY_ADMIN_IDS": "8355389673", "JOBBY_BOT_USERNAME": "JOBBYMemeVoteBot"},
+  "d1_databases": [{"binding": "DB", "database_name": "jobby-meme-voting", "database_id": "REPLACE_WITH_D1_DATABASE_ID"}]
+}

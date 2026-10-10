@@ -9,3 +9,7 @@ state/
 *.sqlite3
 *.sqlite3-wal
 *.sqlite3-shm
+node_modules/
+.wrangler/
+.dev.vars
+cloudflare/wrangler.deploy.json

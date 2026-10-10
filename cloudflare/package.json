@@ -1,0 +1,1 @@
+{"name":"jobby-cloudflare","private":true,"type":"module","scripts":{"test":"node --test test/*.test.js","deploy":"wrangler deploy"},"devDependencies":{"wrangler":"4.63.0"}}

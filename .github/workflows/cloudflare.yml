@@ -1,0 +1,44 @@
+name: Deploy JOBBY to Cloudflare
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: jobby-meme-voting-state
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      JOBBY_BOT_TOKEN: ${{ secrets.JOBBY_BOT_TOKEN }}
+      JOBBY_ADMIN_IDS: ${{ secrets.JOBBY_ADMIN_IDS }}
+      STATE_KEY: ${{ secrets.JOBBY_STATE_KEY }}
+      DB_PATH: ${{ runner.temp }}/jobby_migration.sqlite3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check required credentials
+        shell: bash
+        run: |
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID JOBBY_BOT_TOKEN JOBBY_ADMIN_IDS STATE_KEY; do
+            if [ -z "${!name}" ]; then echo "Required credential missing: $name"; exit 1; fi
+          done
+      - name: Test both implementations
+        run: |
+          python -m unittest discover -s tests
+          node --test cloudflare/test/*.test.js
+      - name: Restore encrypted contest state
+        run: openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in .github/jobby_state.enc -out "$DB_PATH" -pass env:STATE_KEY
+      - name: Install deployment CLI
+        working-directory: cloudflare
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Migrate, deploy and verify webhook
+        run: python cloudflare/deploy.py
+      - name: Remove decrypted snapshot
+        if: always()
+        run: rm -f "$DB_PATH"
