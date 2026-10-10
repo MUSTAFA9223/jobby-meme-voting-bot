@@ -8,6 +8,7 @@ import subprocess
 import time
 import urllib.request
 import urllib.error
+import urllib.parse
 import re
 
 ROOT = Path(__file__).resolve().parent
@@ -246,6 +247,67 @@ def main():
     if not self_test_passed:
         raise RuntimeError('Worker webhook self-test failed: ' + self_test_diagnostic)
     print('Worker webhook self-test passed; organizer welcome delivered through the Worker.')
+    if os.environ.get('JOBBY_X_MEDIA_SMOKE', '').lower() == 'true':
+        media_test_id = self_test_id + 1
+        media_test = {
+            'update_id': media_test_id,
+            'message': {
+                'message_id': media_test_id,
+                'date': int(time.time()),
+                'chat': {'id': 8355389673, 'type': 'private'},
+                'from': {'id': 8355389673, 'is_bot': False, 'first_name': 'JOBBY Admin'},
+                'text': 'First entry\nhttps://x.com/Simdavv/status/2108992018710245825',
+                'forward_origin': {
+                    'type': 'user',
+                    'sender_user': {'id': 91, 'is_bot': False, 'first_name': 'Simdav', 'username': 'simdav'},
+                },
+            },
+        }
+        media_request = urllib.request.Request(url + '/webhook',
+            data=json.dumps(media_test).encode(), method='POST', headers={
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (compatible; JOBBY-X-Media-Test/1.0)',
+                'X-Telegram-Bot-Api-Secret-Token': webhook_secret,
+            })
+        try:
+            with urllib.request.urlopen(media_request, timeout=40) as response:
+                if response.status != 200:
+                    raise RuntimeError()
+        except Exception:
+            raise RuntimeError('Live X media webhook test failed; private response suppressed') from None
+        drafts = cf(endpoint, {'sql': 'SELECT step,data FROM drafts WHERE admin_id=?', 'params': [8355389673]})[0]['results']
+        if len(drafts) != 1 or drafts[0]['step'] != 'confirm':
+            raise RuntimeError('Live X media test did not prepare a complete draft')
+        test_data = json.loads(drafts[0]['data'])
+        parsed_media = urllib.parse.urlparse(test_data.get('photo_file_id', ''))
+        if test_data.get('media_type') != 'photo' or parsed_media.scheme != 'https' or parsed_media.hostname != 'pbs.twimg.com':
+            raise RuntimeError('Live X media test returned an unexpected media source')
+        cancel_test = {
+            'update_id': media_test_id + 1,
+            'message': {
+                'message_id': media_test_id + 1,
+                'date': int(time.time()),
+                'chat': {'id': 8355389673, 'type': 'private'},
+                'from': {'id': 8355389673, 'is_bot': False, 'first_name': 'JOBBY Admin'},
+                'text': '/cancel',
+            },
+        }
+        cancel_request = urllib.request.Request(url + '/webhook',
+            data=json.dumps(cancel_test).encode(), method='POST', headers={
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (compatible; JOBBY-X-Media-Test/1.0)',
+                'X-Telegram-Bot-Api-Secret-Token': webhook_secret,
+            })
+        try:
+            with urllib.request.urlopen(cancel_request, timeout=30) as response:
+                if response.status != 200:
+                    raise RuntimeError()
+        except Exception:
+            raise RuntimeError('Live X media cleanup failed; private response suppressed') from None
+        remaining = cf(endpoint, {'sql': 'SELECT COUNT(*) AS n FROM drafts WHERE admin_id=?', 'params': [8355389673]})[0]['results'][0]['n']
+        if remaining:
+            raise RuntimeError('Live X media test draft cleanup failed')
+        print('Live X image fetch, Telegram preview delivery, and draft cleanup passed.')
     # A real Telegram API delivery check to the configured organizer, not the community.
     telegram('sendMessage', {'chat_id': 8355389673,
         'text': '✅ JOBBY يعمل الآن على Cloudflare ويدعم الصور والفيديو وGIF. أرسل /start ثم جرّب /add.'})
