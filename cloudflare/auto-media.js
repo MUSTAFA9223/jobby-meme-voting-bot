@@ -1,6 +1,6 @@
 import worker from './worker.js';
 
-const X_POST = /https:\/\/(?:www\.)?(?:x\.com|twitter\.com)\/[A-Za-z0-9_]{1,15}\/status\/(\d+)/i;
+const X_POST = /https:\/\/(?:www\.)?(?:x\.com|twitter\.com)\/([A-Za-z0-9_]{1,15})\/status\/(\d+)/i;
 const X_MEDIA_HOSTS = new Set(['pbs.twimg.com', 'video.twimg.com']);
 
 function safeXMediaUrl(raw) {
@@ -35,7 +35,7 @@ export function fxMediaFromPayload(payload) {
 }
 
 async function fetchXMedia(postId, fetcher) {
-  const response = await fetcher(`https://api.fxtwitter.com/2/status/${postId}`, {
+  const options = () => ({
     headers: {
       Accept: 'application/json',
       'User-Agent': 'JOBBYMemeGallery/1.0 (+https://t.me/JOBBYMemeVoteBot)',
@@ -43,12 +43,31 @@ async function fetchXMedia(postId, fetcher) {
     redirect: 'error',
     signal: AbortSignal.timeout(9000),
   });
+  try {
+    const response = await fetcher(`https://api.fxtwitter.com/2/status/${postId.id}`, options());
+    if (!response.ok) throw new Error('FxTwitter rejected the request');
+    const raw = await response.text();
+    if (raw.length > 524288) throw new Error('X media response too large');
+    const media = fxMediaFromPayload(JSON.parse(raw));
+    if (media) return media;
+  } catch {}
+
+  const response = await fetcher(`https://api.vxtwitter.com/${postId.user}/status/${postId.id}`, options());
   if (!response.ok) throw new Error('X media lookup failed');
   const raw = await response.text();
   if (raw.length > 524288) throw new Error('X media response too large');
-  const media = fxMediaFromPayload(JSON.parse(raw));
-  if (!media) throw new Error('No supported X media');
-  return media;
+  const payload = JSON.parse(raw);
+  const items = Array.isArray(payload.media_extended) ? payload.media_extended : [];
+  for (const item of items) {
+    const url = safeXMediaUrl(item?.url);
+    if (!url) continue;
+    return {type: item.type === 'image' ? 'photo' : 'video', url};
+  }
+  for (const candidate of payload.mediaURLs || []) {
+    const url = safeXMediaUrl(candidate);
+    if (url) return {type: new URL(url).hostname === 'pbs.twimg.com' ? 'photo' : 'video', url};
+  }
+  throw new Error('No supported X media');
 }
 
 export async function enrichForwardedXMedia(update, env, fetcher = fetch) {
@@ -62,7 +81,7 @@ export async function enrichForwardedXMedia(update, env, fetcher = fetch) {
   const match = source.match(X_POST);
   if (!match) return update;
   try {
-    const media = await fetchXMedia(match[1], fetcher);
+    const media = await fetchXMedia({user: match[1], id: match[2]}, fetcher);
     const enriched = structuredClone(update);
     if (media.type === 'photo') enriched.message.photo = [{file_id: media.url}];
     else enriched.message[media.type] = {file_id: media.url};
