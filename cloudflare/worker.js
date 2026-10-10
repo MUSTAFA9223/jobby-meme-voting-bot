@@ -75,17 +75,17 @@ export class Contest {
     this.send(chat,'🏆 <b>JOBBY Meme Voting</b>\n\nBrowse memes, rate creativity from 1–5 stars, and cast ONE contest vote for your favorite. You can change it before voting closes.\nOnly the organizer can submit entries.',{inline_keyboard:rows});
   }
   rules(chat) { this.send(chat,`<b>Contest rules</b>\n• One contest vote per Telegram account across all memes.\n• One 1–5 star rating per meme.\n• You can change votes and ratings while voting is open.\n• Votes rank first; star averages break ties.\n• Organizers upload memes and original X links.\n• Status: <b>${esc(this.status.toUpperCase())}</b>.\nPlease vote fairly.`); }
-  caption(e) { return `🏆 <b>JOBBY MEME CONTEST — #${String(e.id).padStart(3,'0')}</b>\n\n🐦 X creator: <b>@${esc(e.x_username)}</b>\n💬 Telegram: <b>@${esc(e.telegram_username)}</b>\n\n🗳 Votes: <b>${e.votes}</b> | ⭐ Rating: <b>${Number(e.average_stars).toFixed(2)}/5</b> (${e.rating_count} ratings)\nContest: <b>${esc(this.status.toUpperCase())}</b>\n\nYour vote: <b>${this.state.vote ? '#'+this.state.vote : 'None'}</b> | Your rating: <b>${this.state.ratings[e.id] || '—'}</b>`; }
-  publicCaption(e) { return `🏆 <b>JOBBY MEME CONTEST — #${String(e.id).padStart(3,'0')}</b>\n\n🐦 X creator: <b>@${esc(e.x_username)}</b>\n💬 Telegram: <b>@${esc(e.telegram_username)}</b>\n\n🗳 Votes: <b>${e.votes}</b> | ⭐ Rating: <b>${Number(e.average_stars).toFixed(2)}/5</b> (${e.rating_count} ratings)\nContest: <b>${esc(this.status.toUpperCase())}</b>\n\nVote and rate directly below.`; }
+  caption(e) { return `🏆 <b>JOBBY MEME CONTEST — #${String(e.id).padStart(3,'0')}</b>\n\n🐦 X creator: <b>@${esc(e.x_username)}</b>\n💬 Telegram: <b>@${esc(e.telegram_username)}</b>\n🔗 Tweet: <a href="${esc(e.tweet_url)}">View original post on X</a>\n\n🗳 Votes: <b>${e.votes}</b> | ⭐ Rating: <b>${Number(e.average_stars).toFixed(2)}/5</b> (${e.rating_count} ratings)\nContest: <b>${esc(this.status.toUpperCase())}</b>\n\nYour vote: <b>${this.state.vote ? '#'+this.state.vote : 'None'}</b> | Your rating: <b>${this.state.ratings[e.id] || '—'}</b>`; }
+  publicCaption(e) { return `🏆 <b>JOBBY MEME CONTEST — #${String(e.id).padStart(3,'0')}</b>\n\n🐦 X creator: <b>@${esc(e.x_username)}</b>\n💬 Telegram: <b>@${esc(e.telegram_username)}</b>\n🔗 Tweet: <a href="${esc(e.tweet_url)}">View original post on X</a>\n\n🗳 Votes: <b>${e.votes}</b> | ⭐ Rating: <b>${Number(e.average_stars).toFixed(2)}/5</b> (${e.rating_count} ratings)\nContest: <b>${esc(this.status.toUpperCase())}</b>\n\nVote and rate directly below.`; }
   entryKeyboard(e) {
     const ids=this.ids(), i=ids.indexOf(e.id), before=ids[(i-1+ids.length)%ids.length], after=ids[(i+1)%ids.length];
     return keyboard([1,2,3,4,5].map(n=>button(`⭐ ${n}`,`rate:${e.id}:${n}`)),[button('🗳 Vote for this meme',`vote:${e.id}`)],
-      [link('🔗 Original X post',e.tweet_url)],[link('X creator',`https://x.com/${e.x_username}`),link('Telegram creator',`https://t.me/${e.telegram_username}`)],
+      [link('🐦 View Tweet on X',e.tweet_url)],[link('X creator',`https://x.com/${e.x_username}`),link('Telegram creator',`https://t.me/${e.telegram_username}`)],
       [button('◀ Previous',`nav:${before}`),button('🏆 Top','menu:leaderboard'),button('Next ▶',`nav:${after}`)]);
   }
   publicKeyboard(e) {
     return keyboard([1,2,3,4,5].map(n=>button(`⭐ ${n}`,`rate:${e.id}:${n}`)),[button('🗳 Vote for this meme',`vote:${e.id}`)],
-      [link('🔗 Original X post',e.tweet_url)],[link('Open full voting',`https://t.me/${this.env.JOBBY_BOT_USERNAME}?start=m${e.id}`)]);
+      [link('🐦 View Tweet on X',e.tweet_url)],[link('Open full voting',`https://t.me/${this.env.JOBBY_BOT_USERNAME}?start=m${e.id}`)]);
   }
   show(chat,id,origin) {
     const e=this.entry(id); if(!e) {this.send(chat,'That entry is not available.');return;}
