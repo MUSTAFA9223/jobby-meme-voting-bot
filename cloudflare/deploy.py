@@ -162,11 +162,28 @@ def main():
         raise RuntimeError('Worker health check failed after deployment; webhook unchanged')
     print('Worker health check passed.')
     telegram('setWebhook', {'url': url + '/webhook', 'secret_token': webhook_secret,
-        'max_connections': 1, 'allowed_updates': ['message', 'callback_query'], 'drop_pending_updates': False})
+        'max_connections': 1, 'allowed_updates': ['message', 'channel_post', 'callback_query', 'my_chat_member'], 'drop_pending_updates': False})
     info = telegram('getWebhookInfo', {})
     if info.get('url') != url + '/webhook' or info.get('max_connections') != 1:
         raise RuntimeError('Webhook configuration verification failed')
     print('Telegram webhook configured and verified.')
+    telegram('setMyCommands', {'scope': {'type': 'all_private_chats'}, 'commands': [
+        {'command': 'start', 'description': 'Open JOBBY voting'},
+        {'command': 'add', 'description': 'Add a photo, video, or GIF meme'},
+        {'command': 'entries', 'description': 'Browse contest entries'},
+        {'command': 'leaderboard', 'description': 'Show current leaderboard'},
+        {'command': 'publish', 'description': 'Publish an entry to a connected chat'},
+        {'command': 'destinations', 'description': 'List connected groups and channels'},
+        {'command': 'admin', 'description': 'Show organizer controls'},
+        {'command': 'rules', 'description': 'Show contest rules'},
+        {'command': 'cancel', 'description': 'Cancel the current draft'},
+    ]})
+    telegram('setMyCommands', {'scope': {'type': 'all_group_chats'}, 'commands': [
+        {'command': 'register', 'description': 'Connect this group to JOBBY voting'},
+        {'command': 'unregister', 'description': 'Disconnect this group'},
+        {'command': 'myid', 'description': 'Show your Telegram ID'},
+    ]})
+    print('Telegram command menus configured.')
     self_test_id = int(time.time() * 1000)
     self_test = {
         'update_id': self_test_id,
