@@ -158,6 +158,12 @@ def main():
         print('Worker health diagnostic: ' + health_diagnostic)
         raise RuntimeError('Worker health check failed after deployment; webhook unchanged')
     print('Worker health check passed.')
+    telegram('setWebhook', {'url': url + '/webhook', 'secret_token': webhook_secret,
+        'max_connections': 1, 'allowed_updates': ['message', 'callback_query'], 'drop_pending_updates': False})
+    info = telegram('getWebhookInfo', {})
+    if info.get('url') != url + '/webhook' or info.get('max_connections') != 1:
+        raise RuntimeError('Webhook configuration verification failed')
+    print('Telegram webhook configured and verified.')
     self_test_id = int(time.time() * 1000)
     self_test = {
         'update_id': self_test_id,
@@ -179,14 +185,13 @@ def main():
         with urllib.request.urlopen(self_test_request, timeout=30) as response:
             if response.status != 200:
                 raise RuntimeError()
+    except urllib.error.HTTPError as exc:
+        body = exc.read(160).decode('utf-8', 'replace')
+        safe_body = re.sub(r'[^A-Za-z0-9 ._-]', '', body)
+        raise RuntimeError('Worker webhook self-test failed with HTTP ' + str(exc.code) + ': ' + safe_body) from None
     except Exception:
-        raise RuntimeError('Worker webhook self-test failed; Telegram webhook unchanged') from None
+        raise RuntimeError('Worker webhook self-test transport failed') from None
     print('Worker webhook self-test passed; organizer welcome delivered through the Worker.')
-    telegram('setWebhook', {'url': url + '/webhook', 'secret_token': webhook_secret,
-        'max_connections': 1, 'allowed_updates': ['message', 'callback_query'], 'drop_pending_updates': False})
-    info = telegram('getWebhookInfo', {})
-    if info.get('url') != url + '/webhook' or info.get('max_connections') != 1:
-        raise RuntimeError('Webhook configuration verification failed')
     # A real Telegram API delivery check to the configured organizer, not the community.
     telegram('sendMessage', {'chat_id': 8355389673,
         'text': '✅ JOBBY يعمل الآن على Cloudflare. أرسل /start ثم جرّب /add وإرسال صورة للتحقق من سرعة الرد.'})
