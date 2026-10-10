@@ -16,7 +16,7 @@ const message=(id,text,admin=8355389673)=>({update_id:id,message:{message_id:id,
 const mediaMessage=(id,type,fileId,admin=8355389673)=>{const u=message(id,'',admin);u.message[type]=type==='photo'?[{file_id:fileId}]:{file_id:fileId};return u;};
 const cb=(id,data,user=44)=>({update_id:id,callback_query:{id:String(id),data,from:{id:user,username:'voter'},message:{message_id:99,chat:{id:user,type:'private'},photo:[{file_id:'photo'}]}}});
 const groupCb=(id,data,type='photo',user=44)=>({update_id:id,callback_query:{id:String(id),data,from:{id:user,username:'voter'},message:{message_id:99,chat:{id:-100123,type:'supergroup',title:'JOBBY Community'},[type]:type==='photo'?[{file_id:'public'}]:{file_id:'public'}}}});
-const membership=(id,chatId,title,type,status='administrator')=>({update_id:id,my_chat_member:{from:{id:8355389673},chat:{id:chatId,title,type},new_chat_member:{status}}});
+const membership=(id,chatId,title,type,status='administrator',user=8355389673)=>({update_id:id,my_chat_member:{from:{id:user},chat:{id:chatId,title,type},new_chat_member:{status}}});
 function seed(db,id=1,type='photo'){db.prepare('INSERT INTO entries(id,photo_file_id,media_type,tweet_url,x_username,telegram_username,created_by,created_at) VALUES(?,?,?,?,?,?,?,?)').run(id,`${type}-file`,type,`https://x.com/creator/status/${id}`,'creator','creatorname',8355389673,'today');}
 test('unauthenticated requests cannot write; malformed updates are rejected',async()=>{
  const {env,db}=fixture();assert.equal((await post(env,message(1,'/pause'),'wrong')).status,403);assert.equal((await post(env,{update_id:'1'})).status,400);assert.equal(db.prepare('SELECT COUNT(*) n FROM webhook_updates').get().n,0);
@@ -49,6 +49,14 @@ test('connected groups and channels appear in the publish menu and receive media
  await post(env,cb(4,'admin:post:1:-100123',8355389673));
  const published=sent.find(x=>x.method==='sendVideo'&&x.payload.chat_id===-100123);
  assert.ok(published);assert.match(published.payload.caption,/Vote and rate directly below/);assert.match(published.payload.caption,/View original post on X/);assert.ok(published.payload.reply_markup.inline_keyboard.flat().some(x=>x.text==='🐦 View Tweet on X'&&x.url==='https://x.com/creator/status/1'));assert.ok(!published.payload.caption.includes('Your vote'));
+});
+test('only the configured organizer can connect a group or use submission controls',async()=>{
+ const {env,db}=fixture(),sent=[];globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
+ await post(env,membership(1,-100999,'Unauthorized Group','supergroup','member',44));
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM destinations').get().n,0);
+ const groupCommand={...message(2,'/register',44),message:{...message(2,'/register',44).message,chat:{id:-100999,type:'supergroup',title:'Unauthorized Group'}}};
+ await post(env,groupCommand);assert.equal(db.prepare('SELECT COUNT(*) n FROM destinations').get().n,0);
+ await post(env,message(3,'/add',44));assert.ok(sent.some(x=>x.payload.text==='Organizer-only command. Try /start.'));
 });
 test('members vote and rate directly on a shared group or channel post',async()=>{
  const {env,db}=fixture(),sent=[];seed(db,1,'animation');globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
