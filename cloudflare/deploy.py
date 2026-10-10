@@ -115,10 +115,15 @@ def main():
     (ROOT / 'wrangler.deploy.json').write_text(config)
     wrangler('deploy', '--config', 'wrangler.deploy.json')
     webhook_secret = secrets.token_hex(32)
-    wrangler('secret', 'bulk', '--config', 'wrangler.deploy.json', input_text=json.dumps({
-        'JOBBY_BOT_TOKEN': BOT_TOKEN, 'JOBBY_WEBHOOK_SECRET': webhook_secret,
-        'JOBBY_ADMIN_IDS': os.environ['JOBBY_ADMIN_IDS'],
-        'JOBBY_REQUIRED_CHAT_ID': os.environ.get('JOBBY_REQUIRED_CHAT_ID', '')}))
+    worker_secrets = {
+        'JOBBY_BOT_TOKEN': BOT_TOKEN,
+        'JOBBY_WEBHOOK_SECRET': webhook_secret,
+    }
+    required_chat = os.environ.get('JOBBY_REQUIRED_CHAT_ID', '').strip()
+    if required_chat:
+        worker_secrets['JOBBY_REQUIRED_CHAT_ID'] = required_chat
+    wrangler('secret', 'bulk', '--config', 'wrangler.deploy.json',
+             input_text=json.dumps(worker_secrets))
     subdomain = cf('/workers/subdomain')['subdomain']
     url = 'https://jobby-meme-voting.' + subdomain + '.workers.dev'
     with urllib.request.urlopen(url + '/health', timeout=30) as response:
