@@ -1,0 +1,85 @@
+name: JOBBY Meme Voting — GitHub-only polling
+
+on:
+  workflow_dispatch:
+  schedule:
+    # GitHub can delay/skip scheduled jobs; this is NOT a continuously running bot.
+    - cron: '3,8,13,18,23,28,33,38,43,48,53,58 * * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: jobby-meme-voting-state
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    # Keep scheduled jobs dormant until the owner enables the repository variable.
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.JOBBY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      BOT_TOKEN: ${{ secrets.JOBBY_BOT_TOKEN }}
+      ADMIN_IDS: ${{ secrets.JOBBY_ADMIN_IDS }}
+      STATE_KEY: ${{ secrets.JOBBY_STATE_KEY }}
+      REQUIRED_CHAT_ID: ${{ vars.JOBBY_REQUIRED_CHAT_ID }}
+      DB_PATH: state/jobby_meme.sqlite3
+      RUN_SECONDS: '10'
+    steps:
+      - name: Check out bot repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Check required secrets
+        shell: bash
+        run: |
+          test -n "$BOT_TOKEN" || { echo 'Missing secret JOBBY_BOT_TOKEN'; exit 1; }
+          test -n "$ADMIN_IDS" || { echo 'Missing secret JOBBY_ADMIN_IDS'; exit 1; }
+          test -n "$STATE_KEY" || { echo 'Missing secret JOBBY_STATE_KEY'; exit 1; }
+          test ${#STATE_KEY} -ge 32 || { echo 'JOBBY_STATE_KEY must be at least 32 characters'; exit 1; }
+
+      - name: Restore encrypted contest data
+        shell: bash
+        run: |
+          mkdir -p state
+          if test -f .github/jobby_state.enc; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+              -in .github/jobby_state.enc -out "$DB_PATH" -pass env:STATE_KEY
+            python3 - <<'PY_SQL'
+          import sqlite3
+          c=sqlite3.connect('state/jobby_meme.sqlite3')
+          assert c.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
+          c.close()
+          PY_SQL
+          fi
+          if test -f "$DB_PATH"; then sha256sum "$DB_PATH" | cut -d' ' -f1 > state/before.hash; fi
+
+      - name: Collect Telegram updates and save votes
+        id: poll
+        continue-on-error: true
+        run: python3 -m jobby_bot
+
+      - name: Encrypt, persist state and offset to GitHub
+        if: ${{ always() && steps.poll.outcome != 'skipped' }}
+        shell: bash
+        run: |
+          sha256sum "$DB_PATH" | cut -d' ' -f1 > state/after.hash
+          if test -f state/before.hash && cmp -s state/before.hash state/after.hash; then
+            echo 'No state changes; no commit needed.'
+            exit 0
+          fi
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+            -in "$DB_PATH" -out .github/jobby_state.enc -pass env:STATE_KEY
+          git config user.name 'jobby-meme-bot[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/jobby_state.enc
+          git commit -m 'chore: save encrypted JOBBY vote state [skip ci]'
+          git push
+
+      - name: Fail visibly if Telegram polling failed
+        if: ${{ steps.poll.outcome == 'failure' }}
+        run: |
+          echo 'Telegram polling failed. Encrypted state was persisted if possible.'
+          exit 1
