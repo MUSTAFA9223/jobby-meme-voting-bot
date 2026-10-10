@@ -158,6 +158,30 @@ def main():
         print('Worker health diagnostic: ' + health_diagnostic)
         raise RuntimeError('Worker health check failed after deployment; webhook unchanged')
     print('Worker health check passed.')
+    self_test_id = int(time.time() * 1000)
+    self_test = {
+        'update_id': self_test_id,
+        'message': {
+            'message_id': self_test_id,
+            'date': int(time.time()),
+            'chat': {'id': 8355389673, 'type': 'private'},
+            'from': {'id': 8355389673, 'is_bot': False, 'first_name': 'JOBBY Admin'},
+            'text': '/start',
+        },
+    }
+    self_test_request = urllib.request.Request(url + '/webhook',
+        data=json.dumps(self_test).encode(), method='POST', headers={
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (compatible; JOBBY-Webhook-Test/1.0)',
+            'X-Telegram-Bot-Api-Secret-Token': webhook_secret,
+        })
+    try:
+        with urllib.request.urlopen(self_test_request, timeout=30) as response:
+            if response.status != 200:
+                raise RuntimeError()
+    except Exception:
+        raise RuntimeError('Worker webhook self-test failed; Telegram webhook unchanged') from None
+    print('Worker webhook self-test passed; organizer welcome delivered through the Worker.')
     telegram('setWebhook', {'url': url + '/webhook', 'secret_token': webhook_secret,
         'max_connections': 1, 'allowed_updates': ['message', 'callback_query'], 'drop_pending_updates': False})
     info = telegram('getWebhookInfo', {})
