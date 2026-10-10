@@ -35,14 +35,11 @@ export function fxMediaFromPayload(payload) {
 }
 
 async function fetchXMedia(postId, fetcher) {
-  const options = () => ({
-    headers: {
-      Accept: 'application/json',
-      'User-Agent': 'JOBBYMemeGallery/1.0 (+https://t.me/JOBBYMemeVoteBot)',
-    },
-    redirect: 'error',
-    signal: AbortSignal.timeout(9000),
-  });
+  // Keep subrequests to the portable Workers fetch subset. Some Worker
+  // runtimes reject custom User-Agent/AbortSignal combinations before the
+  // request is sent; the response size and every returned media host are
+  // still validated below.
+  const options = () => ({headers: {Accept: 'application/json'}});
   try {
     const response = await fetcher(`https://api.fxtwitter.com/2/status/${postId.id}`, options());
     if (!response.ok) throw new Error('FxTwitter rejected the request');
