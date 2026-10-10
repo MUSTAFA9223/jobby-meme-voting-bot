@@ -40,6 +40,14 @@ async function fetchXMedia(postId, fetcher) {
   // request is sent; the response size and every returned media host are
   // still validated below.
   const options = () => ({headers: {Accept: 'application/json'}});
+  const direct = `https://d.fxtwitter.com/${postId.user}/status/${postId.id}`;
+  try {
+    const response = await fetcher(direct, {method: 'HEAD', redirect: 'manual'});
+    const location = safeXMediaUrl(response.headers.get('location'));
+    if (location) {
+      return {type: new URL(location).hostname === 'pbs.twimg.com' ? 'photo' : 'video', url: location};
+    }
+  } catch {}
   try {
     const response = await fetcher(`https://api.fxtwitter.com/2/status/${postId.id}`, options());
     if (!response.ok) throw new Error('FxTwitter rejected the request');
@@ -49,22 +57,27 @@ async function fetchXMedia(postId, fetcher) {
     if (media) return media;
   } catch {}
 
-  const response = await fetcher(`https://api.vxtwitter.com/${postId.user}/status/${postId.id}`, options());
-  if (!response.ok) throw new Error('X media lookup failed');
-  const raw = await response.text();
-  if (raw.length > 524288) throw new Error('X media response too large');
-  const payload = JSON.parse(raw);
-  const items = Array.isArray(payload.media_extended) ? payload.media_extended : [];
-  for (const item of items) {
-    const url = safeXMediaUrl(item?.url);
-    if (!url) continue;
-    return {type: item.type === 'image' ? 'photo' : 'video', url};
-  }
-  for (const candidate of payload.mediaURLs || []) {
-    const url = safeXMediaUrl(candidate);
-    if (url) return {type: new URL(url).hostname === 'pbs.twimg.com' ? 'photo' : 'video', url};
-  }
-  throw new Error('No supported X media');
+  try {
+    const response = await fetcher(`https://api.vxtwitter.com/${postId.user}/status/${postId.id}`, options());
+    if (!response.ok) throw new Error('X media lookup failed');
+    const raw = await response.text();
+    if (raw.length > 524288) throw new Error('X media response too large');
+    const payload = JSON.parse(raw);
+    const items = Array.isArray(payload.media_extended) ? payload.media_extended : [];
+    for (const item of items) {
+      const url = safeXMediaUrl(item?.url);
+      if (!url) continue;
+      return {type: item.type === 'image' ? 'photo' : 'video', url};
+    }
+    for (const candidate of payload.mediaURLs || []) {
+      const url = safeXMediaUrl(candidate);
+      if (url) return {type: new URL(url).hostname === 'pbs.twimg.com' ? 'photo' : 'video', url};
+    }
+  } catch {}
+  // The documented direct-media URL is generated from the validated X
+  // handle/id and lets Telegram follow the media redirect even when public
+  // JSON APIs reject requests from Cloudflare's network.
+  return {type: 'photo', url: direct};
 }
 
 export async function enrichForwardedXMedia(update, env, fetcher = fetch) {

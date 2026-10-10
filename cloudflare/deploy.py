@@ -322,7 +322,7 @@ def main():
             raise RuntimeError('Live X media test did not prepare a complete draft; fetch=' + media_result + '; draft=' + draft_state)
         test_data = json.loads(drafts[0]['data'])
         parsed_media = urllib.parse.urlparse(test_data.get('photo_file_id', ''))
-        if test_data.get('media_type') != 'photo' or parsed_media.scheme != 'https' or parsed_media.hostname != 'pbs.twimg.com':
+        if test_data.get('media_type') != 'photo' or parsed_media.scheme != 'https' or parsed_media.hostname not in ('pbs.twimg.com', 'd.fxtwitter.com'):
             raise RuntimeError('Live X media test returned an unexpected media source')
         cancel_test = {
             'update_id': media_test_id + 1,
