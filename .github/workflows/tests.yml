@@ -1,0 +1,28 @@
+name: JOBBY Bot Tests
+
+on:
+  push:
+    paths:
+      - 'jobby_bot/**'
+      - 'tests/**'
+      - '.github/workflows/tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify bot tests
+        run: python -m unittest discover -s tests -v
+      - name: Compile bot code
+        run: python -m compileall -q jobby_bot
