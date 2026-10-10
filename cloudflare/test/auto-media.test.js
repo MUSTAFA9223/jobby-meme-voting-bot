@@ -42,6 +42,7 @@ test('vxTwitter is used when the primary provider is unavailable', async () => {
   const calls = [];
   const fetcher = async url => {
     calls.push(url);
+    if (url.includes('d.fxtwitter.com')) return new Response(null, {status: 503});
     if (url.includes('api.fxtwitter.com')) return new Response('blocked', {status: 403});
     return Response.json({user_screen_name: 'Simdavv', media_extended: [
       {type: 'image', url: 'https://pbs.twimg.com/media/fallback.jpg'},
@@ -49,7 +50,17 @@ test('vxTwitter is used when the primary provider is unavailable', async () => {
   };
   const result = await enrichForwardedXMedia(forwarded(), {JOBBY_ADMIN_IDS: '8355389673'}, fetcher);
   assert.equal(result.message.photo[0].file_id, 'https://pbs.twimg.com/media/fallback.jpg');
-  assert.match(calls[1], /api\.vxtwitter\.com\/Simdavv\/status\/2108992018710245825$/);
+  assert.ok(calls.some(url => /api\.vxtwitter\.com\/Simdavv\/status\/2108992018710245825$/.test(url)));
+});
+
+test('direct-media redirect works without either JSON API', async () => {
+  const fetcher = async url => {
+    if (url.includes('d.fxtwitter.com')) return new Response(null, {status: 302,
+      headers: {location: 'https://pbs.twimg.com/media/direct.jpg?name=orig'}});
+    throw new Error('JSON API must not be called after a valid redirect');
+  };
+  const result = await enrichForwardedXMedia(forwarded(), {JOBBY_ADMIN_IDS: '8355389673'}, fetcher);
+  assert.equal(result.message.photo[0].file_id, 'https://pbs.twimg.com/media/direct.jpg?name=orig');
 });
 
 test('non-admin and ordinary messages never call the external service', async () => {
