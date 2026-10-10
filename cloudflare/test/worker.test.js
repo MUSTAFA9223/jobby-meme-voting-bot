@@ -40,7 +40,7 @@ test('video and GIF memes publish with the correct Telegram media methods',async
 test('connected groups and channels appear in the publish menu and receive media voting posts',async()=>{
  const {env,db}=fixture(),sent=[];globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
  await post(env,membership(1,-100123,'JOBBY Community','supergroup'));
- await post(env,membership(2,-100456,'JOBBY Channel','channel'));
+ const forwarded=message(2,'');forwarded.message.forward_origin={type:'channel',chat:{id:-100456,title:'JOBBY Channel',type:'channel'}};await post(env,forwarded);
  assert.deepEqual(db.prepare('SELECT chat_type,COUNT(*) n FROM destinations GROUP BY chat_type ORDER BY chat_type').all().map(x=>({...x})),[{chat_type:'channel',n:1},{chat_type:'supergroup',n:1}]);
  seed(db,1,'video');
  await post(env,message(3,'/publish 1'));
