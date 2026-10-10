@@ -7,6 +7,7 @@ import secrets
 import sqlite3
 import subprocess
 import urllib.request
+import re
 
 ROOT = Path(__file__).resolve().parent
 CF_TOKEN = os.environ['CLOUDFLARE_API_TOKEN']
@@ -53,6 +54,14 @@ def wrangler(*args, input_text=None):
     result = subprocess.run(['npx', '--no-install', 'wrangler', *args], cwd=ROOT,
         input=input_text, text=True, capture_output=True, env=command_env)
     if result.returncode:
+        diagnostic = '\n'.join((result.stdout + '\n' + result.stderr).splitlines()[-12:])
+        for value in (CF_TOKEN, BOT_TOKEN, os.environ.get('STATE_KEY', ''), ACCOUNT):
+            if value:
+                diagnostic = diagnostic.replace(value, '[redacted]')
+        diagnostic = re.sub(r'https?://\S+', '[redacted-url]', diagnostic)
+        diagnostic = re.sub(r'[\w.+-]+@[\w.-]+', '[redacted-email]', diagnostic)
+        diagnostic = re.sub(r'[A-Za-z0-9_-]{24,}', '[redacted-id]', diagnostic)
+        print('Wrangler diagnostic (sanitized):\n' + diagnostic)
         raise RuntimeError('Wrangler operation failed; credential-bearing output suppressed')
 
 
