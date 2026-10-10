@@ -50,6 +50,9 @@ def wrangler(*args, input_text=None):
 
 
 def main():
+    with sqlite3.connect(os.environ['DB_PATH']) as snapshot:
+        if snapshot.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
+            raise RuntimeError('Encrypted contest snapshot integrity check failed')
     identity = telegram('getMe', {})
     if identity.get('username') != 'JOBBYMemeVoteBot':
         raise RuntimeError('Unexpected bot identity; deployment stopped')
@@ -93,7 +96,8 @@ def main():
     webhook_secret = secrets.token_hex(32)
     wrangler('secret', 'bulk', '--config', 'wrangler.deploy.json', input_text=json.dumps({
         'JOBBY_BOT_TOKEN': BOT_TOKEN, 'JOBBY_WEBHOOK_SECRET': webhook_secret,
-        'JOBBY_ADMIN_IDS': os.environ['JOBBY_ADMIN_IDS']}))
+        'JOBBY_ADMIN_IDS': os.environ['JOBBY_ADMIN_IDS'],
+        'JOBBY_REQUIRED_CHAT_ID': os.environ.get('JOBBY_REQUIRED_CHAT_ID', '')}))
     subdomain = cf('/workers/subdomain')['subdomain']
     url = 'https://jobby-meme-voting.' + subdomain + '.workers.dev'
     with urllib.request.urlopen(url + '/health', timeout=30) as response:

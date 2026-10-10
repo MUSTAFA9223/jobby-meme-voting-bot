@@ -16,7 +16,9 @@ jobs:
       JOBBY_BOT_TOKEN: ${{ secrets.JOBBY_BOT_TOKEN }}
       JOBBY_ADMIN_IDS: ${{ secrets.JOBBY_ADMIN_IDS }}
       STATE_KEY: ${{ secrets.JOBBY_STATE_KEY }}
-      DB_PATH: ${{ runner.temp }}/jobby_migration.sqlite3
+      DB_PATH: /tmp/jobby_migration.sqlite3
+      JOBBY_REQUIRED_CHAT_ID: ${{ vars.JOBBY_REQUIRED_CHAT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -33,10 +35,12 @@ jobs:
           python -m unittest discover -s tests
           node --test cloudflare/test/*.test.js
       - name: Restore encrypted contest state
-        run: openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in .github/jobby_state.enc -out "$DB_PATH" -pass env:STATE_KEY
+        run: |
+          umask 077
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in .github/jobby_state.enc -out "$DB_PATH" -pass env:STATE_KEY
       - name: Install deployment CLI
         working-directory: cloudflare
-        run: npm install --ignore-scripts --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Migrate, deploy and verify webhook
         run: python cloudflare/deploy.py
       - name: Remove decrypted snapshot
