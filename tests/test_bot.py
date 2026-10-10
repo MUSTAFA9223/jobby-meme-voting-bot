@@ -120,6 +120,22 @@ class BotTests(unittest.TestCase):
         self.assertEqual(data["x_username"], "creator")
         self.assertEqual(data["telegram_username"], "creatorname")
 
+    def test_forwarded_x_preview_then_photo_completes_draft(self):
+        preview_only = {
+            "from": {"id": 444}, "chat": {"id": 444, "type": "private"},
+            "message_id": 14,
+            "text": "First entry\nhttps://x.com/Simdavv/status/2108992018710245825",
+            "forward_origin": {"type": "user", "sender_user": {"id": 91, "username": "simdav"}},
+        }
+        self.bot.handle_update({"message": preview_only})
+        step, data = self.db.draft(444)
+        self.assertEqual(step, "photo")
+        self.assertEqual(data["tweet_url"], "https://x.com/Simdavv/status/2108992018710245825")
+        self.message(444, photo="actual-meme")
+        step, data = self.db.draft(444)
+        self.assertEqual(step, "confirm")
+        self.assertEqual(data["photo_file_id"], "actual-meme")
+
     def test_legacy_vote_and_rating_callbacks_are_disabled(self):
         self.db.create_entry("photo", "https://x.com/user/status/2", "artist", "artisttelegram", 444)
         self.callback(101, "vote:1")

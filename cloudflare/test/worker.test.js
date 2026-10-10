@@ -49,6 +49,17 @@ test('forward import asks only for metadata Telegram could not detect',async()=>
  const draft=db.prepare('SELECT step,data FROM drafts').get();assert.equal(draft.step,'confirm');
  const data=JSON.parse(draft.data);assert.equal(data.x_username,'creator');assert.equal(data.telegram_username,'creatorname');
 });
+test('X link preview is accepted first and only the actual media is requested',async()=>{
+ const {env,db}=fixture();globalThis.fetch=async()=>Response.json({ok:true,result:{}});
+ const previewOnly=message(1,'First entry\nhttps://x.com/Simdavv/status/2108992018710245825');
+ previewOnly.message.forward_origin={type:'user',sender_user:{id:91,username:'simdav'}};
+ await post(env,previewOnly);
+ let draft=db.prepare('SELECT step,data FROM drafts').get();assert.equal(draft.step,'media');
+ assert.equal(JSON.parse(draft.data).tweet_url,'https://x.com/Simdavv/status/2108992018710245825');
+ await post(env,mediaMessage(2,'photo','actual-meme'));
+ draft=db.prepare('SELECT step,data FROM drafts').get();assert.equal(draft.step,'confirm');
+ assert.equal(JSON.parse(draft.data).photo_file_id,'actual-meme');
+});
 test('video and GIF memes publish with the correct Telegram media methods',async()=>{
  for(const [type,method] of [['video','sendVideo'],['animation','sendAnimation']]){
   const {env,db}=fixture(),sent=[];globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};

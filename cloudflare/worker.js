@@ -139,11 +139,15 @@ export class Contest {
     if(!forwarded)return false;
     const photo=message.photo?.at(-1),video=message.video,animation=message.animation;
     const media=photo?{media_type:'photo',photo_file_id:photo.file_id}:video?{media_type:'video',photo_file_id:video.file_id}:animation?{media_type:'animation',photo_file_id:animation.file_id}:null;
-    if(!media){this.send(chat,'Forward a meme containing a photo, video, or GIF.');return true;}
     const tweet_url=tweetFromMessage(message),telegram_username=forwardedTelegramUsername(message);
-    const data={...media,forwarded_import:true};
+    const data={...(media||{}),forwarded_import:true};
     if(tweet_url){data.tweet_url=tweet_url;data.x_username=xHandleFromTweet(tweet_url);}
     if(telegram_username)try{data.telegram_username=normalizeHandle(telegram_username,true);}catch{}
+    if(!media){
+      if(data.tweet_url){this.draft('media',data);this.send(chat,'✅ X link and available usernames detected. The picture shown above is only an X link preview, so Telegram did not provide the media file. Now send the meme itself as a photo, video, or GIF.');}
+      else this.send(chat,'Forward a meme containing a photo, video, or GIF, or include its original X post link.');
+      return true;
+    }
     if(!data.tweet_url){this.draft('tweet',data);this.send(chat,'Meme received. Send the original X post URL to finish the entry.');return true;}
     if(!data.telegram_username){this.draft('tg',data);this.send(chat,"Meme and X link detected. Send the participant's Telegram username.");return true;}
     this.draft('confirm',data);this.send(chat,'✅ Meme, X link, X username, and Telegram username detected automatically.');this.preview(chat);return true;
@@ -155,7 +159,12 @@ export class Contest {
       const photo=message.photo?.at(-1),video=message.video,animation=message.animation;
       const media=photo?{type:'photo',file_id:photo.file_id}:video?{type:'video',file_id:video.file_id}:animation?{type:'animation',file_id:animation.file_id}:null;
       if(!media){this.send(chat,'Send the meme as a Telegram photo, video, or GIF. /cancel to stop.');return true;}
-      this.draft('tweet',{...data,media_type:media.type,photo_file_id:media.file_id});this.send(chat,'Step 2/4: Paste the original X post URL.');return true;
+      const next={...data,media_type:media.type,photo_file_id:media.file_id};
+      if(data.forwarded_import&&next.tweet_url){
+        if(next.telegram_username){this.draft('confirm',next);this.preview(chat);}
+        else{this.draft('tg',next);this.send(chat,"Media and X link detected. Send the participant's Telegram username.");}
+      }else{this.draft('tweet',next);this.send(chat,'Step 2/4: Paste the original X post URL.');}
+      return true;
     }
     try {
       const text=message.text||'';

@@ -177,10 +177,9 @@ class MemeBot:
                    ("forward_origin", "forward_from", "forward_from_chat", "is_automatic_forward")):
             return False
         photos = message.get("photo") or []
-        if not photos:
-            self.api.send(chat_id, "Forward a meme containing a photo.")
-            return True
-        data = {"photo_file_id": photos[-1]["file_id"], "forwarded_import": True}
+        data = {"forwarded_import": True}
+        if photos:
+            data["photo_file_id"] = photos[-1]["file_id"]
         tweet_url = tweet_from_message(message)
         if tweet_url:
             data["tweet_url"] = tweet_url
@@ -191,6 +190,13 @@ class MemeBot:
                 data["telegram_username"] = normalize_telegram_handle(telegram_username)
             except ValueError:
                 pass
+        if not photos:
+            if data.get("tweet_url"):
+                self.store.save_draft(user_id, "photo", data)
+                self.api.send(chat_id, "✅ X link and available usernames detected. The picture shown above is only an X link preview, so Telegram did not provide the media file. Now send the meme itself as a photo.")
+            else:
+                self.api.send(chat_id, "Forward a meme containing a photo, or include its original X post link.")
+            return True
         if "tweet_url" not in data:
             self.store.save_draft(user_id, "tweet", data)
             self.api.send(chat_id, "Meme received. Send the original X post URL to finish the entry.")
@@ -217,8 +223,16 @@ class MemeBot:
                 self.api.send(chat_id, "Please send the meme as a Telegram photo. To stop, /cancel.")
                 return True
             data["photo_file_id"] = photos[-1]["file_id"]
-            self.store.save_draft(user_id, "tweet", data)
-            self.api.send(chat_id, "Step 2/4: Paste the original X post URL (https://x.com/user/status/...).")
+            if data.get("forwarded_import") and data.get("tweet_url"):
+                if data.get("telegram_username"):
+                    self.store.save_draft(user_id, "confirm", data)
+                    self.preview(chat_id, user_id)
+                else:
+                    self.store.save_draft(user_id, "tg", data)
+                    self.api.send(chat_id, "Media and X link detected. Send the participant's Telegram username.")
+            else:
+                self.store.save_draft(user_id, "tweet", data)
+                self.api.send(chat_id, "Step 2/4: Paste the original X post URL (https://x.com/user/status/...).")
             return True
         raw = (message.get("text") or "").strip()
         try:
