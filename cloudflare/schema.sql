@@ -1,6 +1,7 @@
 -- Existing SQLite tables are preserved when importing the encrypted GitHub state.
 CREATE TABLE IF NOT EXISTS entries (
  id INTEGER PRIMARY KEY AUTOINCREMENT, photo_file_id TEXT NOT NULL,
+ media_type TEXT NOT NULL DEFAULT 'photo' CHECK(media_type IN ('photo','video','animation')),
  tweet_url TEXT NOT NULL, x_username TEXT NOT NULL, telegram_username TEXT NOT NULL,
  created_by INTEGER NOT NULL, created_at TEXT NOT NULL,
  active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1))
