@@ -137,7 +137,11 @@ def main():
     health_diagnostic = 'no response'
     for _ in range(6):
         try:
-            with urllib.request.urlopen(url + '/health', timeout=30) as response:
+            health_request = urllib.request.Request(url + '/health', headers={
+                'User-Agent': 'Mozilla/5.0 (compatible; JOBBY-Health/1.0)',
+                'Accept': 'text/plain',
+            })
+            with urllib.request.urlopen(health_request, timeout=30) as response:
                 healthy = response.status == 200
                 health_diagnostic = 'HTTP ' + str(response.status)
         except urllib.error.HTTPError as exc:
