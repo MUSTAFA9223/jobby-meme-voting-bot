@@ -1,4 +1,4 @@
-"""JOBBY meme contest: private admin uploads, public votes and star ratings."""
+"""JOBBY meme gallery: private admin uploads and public browsing."""
 from __future__ import annotations
 
 import html
@@ -43,81 +43,48 @@ class MemeBot:
     def is_admin(self, user_id: int) -> bool:
         return user_id in self.admins
 
-    def has_access(self, user_id: int) -> bool:
-        if not self.required_chat or self.is_admin(user_id):
-            return True
-        try:
-            result = self.api.call("getChatMember", chat_id=self.required_chat, user_id=user_id)
-            status = result.get("status")
-            return status in ("member", "administrator", "creator") or (
-                status == "restricted" and result.get("is_member") is True
-            )
-        except TelegramError:
-            return False  # Fail closed when the optional membership guard cannot be verified.
-
     def welcome(self, chat_id: int, is_admin: bool):
         text = (
-            "🏆 <b>JOBBY Meme Voting</b>\n\n"
-            "Explore official JOBBY meme entries and vote once for every meme you support. "
-            "Each recorded vote is final and cannot be added twice.\n\n"
-            "Only the contest organizer can submit entries."
+            "🖼 <b>JOBBY Meme Gallery</b>\n\n"
+            "Explore official JOBBY meme entries and open each creator's original X post.\n\n"
+            "Only the organizer can add or publish entries."
         )
         rows = [
-            [data_button("🖼 Browse memes", "menu:entries")],
-            [data_button("🏆 Leaderboard", "menu:leaderboard"),
-             data_button("ℹ️ Rules", "menu:rules")],
+            [data_button("🖼 Browse entries", "menu:entries")],
+            [data_button("ℹ️ About the gallery", "menu:about")],
         ]
         if is_admin:
             rows.append([data_button("➕ Add meme (admin)", "admin:add")])
         self.api.send(chat_id, text, {"inline_keyboard": rows})
 
-    def rules(self, chat_id: int):
-        status = self.store.status()
+    def about(self, chat_id: int):
         self.api.send(chat_id,
-            "<b>Contest rules</b>\n"
-            "• Each Telegram account can vote once for every meme.\n"
-            "• A recorded vote is final and cannot be added twice or changed.\n"
-            "• Each meme can also receive one 1–5 star rating per account.\n"
-            "• Ratings can be changed while voting is open.\n"
-            "• Vote counts rank entries first; star averages break ties.\n"
-            "• Organizers upload the memes and original X post links.\n"
-            f"• Voting status: <b>{esc(status.upper())}</b>.\n\n"
-            "Please vote fairly. Multiple accounts or coordinated manipulation "
-            "may lead to organizer review.")
+            "<b>JOBBY Meme Gallery</b>\n"
+            "• Browse every official entry.\n"
+            "• Open the original X post and creator profiles from each card.\n"
+            "• Only the organizer can add, hide, restore, or publish entries.")
 
     def entry_caption(self, row: dict, user_id: int | None = None) -> str:
-        votes = int(row.get("votes", 0))
-        rating_count = int(row.get("rating_count", 0))
-        stars = float(row.get("average_stars", 0))
-        text = (f"🏆 <b>JOBBY MEME CONTEST — #{row['id']:03d}</b>\n\n"
+        text = (f"🖼 <b>JOBBY MEME ENTRY — #{row['id']:03d}</b>\n\n"
                 f"🐦 X creator: <b>@{esc(row['x_username'])}</b>\n"
-                f"💬 Telegram: <b>@{esc(row['telegram_username'])}</b>\n\n"
-                f"🗳 Votes: <b>{votes}</b>  |  ⭐ Rating: <b>{stars:.2f}/5</b> "
-                f"({rating_count} ratings)\n"
-                f"Contest: <b>{esc(self.store.status().upper())}</b>")
-        if user_id is not None:
-            current_vote = self.store.has_voted(user_id, row["id"])
-            current_stars = self.store.rating_for(user_id, row["id"])
-            text += (f"\n\nYour vote: <b>{'Recorded' if current_vote else 'Not voted'}</b>"
-                     f"  |  Your rating: <b>{str(current_stars) if current_stars else '—'}</b>")
+                f"💬 Telegram: <b>@{esc(row['telegram_username'])}</b>\n"
+                f"🔗 Original X post: {esc(row['tweet_url'])}")
         return text
 
     def entry_keyboard(self, row: dict):
         ids = self.store.entry_ids()
         if not ids:
-            return inline([data_button("🏆 Leaderboard", "menu:leaderboard")])
+            return inline([data_button("🖼 Gallery", "menu:entries")])
         index = ids.index(row["id"])
         before = ids[(index - 1) % len(ids)]
         after = ids[(index + 1) % len(ids)]
         i = row["id"]
         return inline(
-            [data_button(f"⭐ {n}", f"rate:{i}:{n}") for n in range(1, 6)],
-            [data_button("🗳 Vote for this meme", f"vote:{i}")],
             [url_button("🔗 Original X post", row["tweet_url"])],
             [url_button("X creator", f"https://x.com/{row['x_username']}"),
              url_button("Telegram creator", f"https://t.me/{row['telegram_username']}")],
             [data_button("◀ Previous", f"nav:{before}"),
-             data_button("🏆 Top", "menu:leaderboard"),
+             data_button("🖼 Gallery", "menu:entries"),
              data_button("Next ▶", f"nav:{after}")],
         )
 
@@ -144,44 +111,15 @@ class MemeBot:
         else:
             self.api.photo(chat_id, row["photo_file_id"], caption, markup)
 
-    def refresh_entry(self, chat_id: int, message: dict, entry_id: int, user_id: int):
-        row = self.enriched_entry(entry_id)
-        if row and message.get("photo"):
-            self.api.call("editMessageCaption", chat_id=chat_id,
-                message_id=message["message_id"], caption=self.entry_caption(row, user_id),
-                parse_mode="HTML", reply_markup=self.entry_keyboard(row))
-
-    def leaderboard(self, chat_id: int):
-        rows = self.store.standings()
-        if not rows:
-            self.api.send(chat_id, "No memes have been added yet. Check back soon!")
-            return
-        lines = [f"🏆 <b>JOBBY Leaderboard</b>  ({esc(self.store.status().upper())})", ""]
-        for rank, row in enumerate(rows[:10], start=1):
-            lines.append(f"{rank}. <b>#{row['id']:03d} @{esc(row['x_username'])}</b> — "
-                         f"{row['votes']} votes | ⭐ {row['average_stars']:.2f} "
-                         f"({row['rating_count']})")
-        lines.append("\nRanked by votes, then average star rating.")
-        buttons = [[data_button(f"View #{row['id']:03d}", f"nav:{row['id']}")
-                    for row in rows[j:j + 3]] for j in range(0, min(9, len(rows)), 3)]
-        if len(rows) > 9:
-            buttons.append([data_button(f"View #{rows[9]['id']:03d}", f"nav:{rows[9]['id']}")])
-        buttons.append([data_button("🖼 Browse all memes", "menu:entries")])
-        self.api.send(chat_id, "\n".join(lines), {"inline_keyboard": buttons})
-
     def admin_help(self, chat_id: int):
         self.api.send(chat_id,
             "<b>JOBBY Meme Bot — Admin</b>\n\n"
             "/add — Submit a meme (photo → X post → X handle → TG handle → confirm)\n"
             "/cancel — Cancel current upload\n"
             "/list — See entries\n"
-            "/remove 12 — Hide entry #12 (votes retained)\n"
+            "/remove 12 — Hide entry #12\n"
             "/restore 12 — Restore hidden entry #12\n"
-            "/pause — Freeze voting temporarily\n"
-            "/resume — Reopen voting\n"
-            "/close — End voting\n"
-            "/results — Show leaderboard\n"
-            "/stats — Overall counters\n"
+            "/stats — Entry counters\n"
             "/share 12 — Get a link directly to entry #12\n\n"
             "<b>Only the IDs in ADMIN_IDS can use these commands.</b>")
 
@@ -254,7 +192,7 @@ class MemeBot:
             self.api.send(chat_id, f"Your Telegram numeric ID is: <code>{user_id}</code>.")
             return
         if not private:
-            self.api.send(chat_id, "Please open the voting bot in a private chat to participate.")
+            self.api.send(chat_id, "Please open the gallery bot in a private chat to browse entries.")
             return
         if command == "/start":
             if len(parts) == 2 and re.fullmatch(r"m\d{1,9}", parts[1]):
@@ -269,11 +207,8 @@ class MemeBot:
             else:
                 self.api.send(chat_id, "No meme entries yet. Check back soon!")
             return
-        if command in ("/leaderboard", "/results"):
-            self.leaderboard(chat_id)
-            return
-        if command == "/rules":
-            self.rules(chat_id)
+        if command in ("/about", "/rules"):
+            self.about(chat_id)
             return
         if not self.is_admin(user_id):
             self.api.send(chat_id, "That is an organizer-only command. Try /start.")
@@ -285,15 +220,6 @@ class MemeBot:
         elif command == "/cancel":
             self.store.clear_draft(user_id)
             self.api.send(chat_id, "Draft canceled. Nothing was published.")
-        elif command == "/pause":
-            self.store.set_status("paused")
-            self.api.send(chat_id, "⏸ Voting and ratings are now paused.")
-        elif command == "/resume":
-            self.store.set_status("open")
-            self.api.send(chat_id, "✅ Voting and ratings are now open.")
-        elif command == "/close":
-            self.store.set_status("closed")
-            self.api.send(chat_id, "🏁 Voting and ratings are closed. Results are preserved. /resume reopens.")
         elif command == "/list":
             rows = self.store.db.execute("SELECT id, x_username, active FROM entries ORDER BY id DESC LIMIT 50").fetchall()
             line = [f"#{r['id']:03d} @{esc(r['x_username'])} — {'visible' if r['active'] else 'hidden'}" for r in rows]
@@ -301,9 +227,8 @@ class MemeBot:
         elif command == "/stats":
             counts = self.store.counts()
             self.api.send(chat_id,
-                f"<b>Contest stats</b>\nActive: {counts['entries']}\n"
-                f"Hidden: {counts['hidden']}\nValid votes: {counts['voters']}\n"
-                f"Ratings: {counts['ratings']}\nStatus: {esc(self.store.status())}")
+                f"<b>Gallery stats</b>\nVisible entries: {counts['entries']}\n"
+                f"Hidden entries: {counts['hidden']}")
         elif command in ("/remove", "/restore", "/share"):
             if len(parts) != 2 or not parts[1].isdigit():
                 self.api.send(chat_id, f"Usage: {esc(command)} &lt;entry number&gt;")
@@ -354,13 +279,9 @@ class MemeBot:
             else:
                 self.api.send(chat_id, "No entries have been added yet.")
             return
-        if action == "menu:leaderboard":
+        if action in ("menu:about", "menu:rules"):
             self.safe_ack(cid)
-            self.leaderboard(chat_id)
-            return
-        if action == "menu:rules":
-            self.safe_ack(cid)
-            self.rules(chat_id)
+            self.about(chat_id)
             return
         if action == "admin:add":
             if not self.is_admin(user_id):
@@ -395,44 +316,16 @@ class MemeBot:
             return
 
         chunks = action.split(":")
-        if len(chunks) >= 2 and chunks[0] in ("nav", "vote", "rate") and chunks[1].isdigit():
+        if len(chunks) >= 2 and chunks[0] == "nav" and chunks[1].isdigit():
             entry_id = int(chunks[1])
             if not self.store.entry(entry_id):
                 self.safe_ack(cid, "Entry is unavailable.")
                 return
-            if chunks[0] == "nav":
-                self.safe_ack(cid)
-                self.show_entry(chat_id, entry_id, user_id, message)
-                return
-            if not self.has_access(user_id):
-                self.safe_ack(cid, "Join the official community first, then try again.")
-                return
-            entry = self.store.entry(entry_id)
-            # The organizer supplies the Telegram handle; prevent obvious self-voting.
-            if (user.get("username", "").casefold() == entry["telegram_username"].casefold()):
-                self.safe_ack(cid, "Creators cannot rate or vote for their own meme.")
-                return
-            if chunks[0] == "vote" and len(chunks) == 2:
-                result = self.store.cast_vote(user_id, entry_id)
-                messages = {"saved": "Vote recorded!",
-                            "same": "You already voted for this meme.", "closed": "Voting is closed.",
-                            "missing": "Entry unavailable."}
-            elif (chunks[0] == "rate" and len(chunks) == 3
-                  and chunks[2] in ("1", "2", "3", "4", "5")):
-                result = self.store.rate(user_id, entry_id, int(chunks[2]))
-                messages = {"saved": "Rating saved!", "closed": "Rating is closed.",
-                            "missing": "Entry unavailable."}
-            else:
-                self.safe_ack(cid, "Unknown action.")
-                return
-            if not self.safe_ack(cid, messages[result]):
-                self.api.send(chat_id, messages[result])
-            if result in ("saved", "changed", "same"):
-                try:
-                    self.refresh_entry(chat_id, message, entry_id, user_id)
-                except TelegramError:
-                    # Valid votes/ratings persist even if Telegram cannot edit stale UI.
-                    LOGGER.warning("Could not refresh an older entry message")
+            self.safe_ack(cid)
+            self.show_entry(chat_id, entry_id, user_id, message)
+            return
+        if action.startswith("vote:") or action.startswith("rate:"):
+            self.safe_ack(cid, "This action is no longer available.")
             return
         self.safe_ack(cid, "Unknown action")
 
@@ -457,7 +350,7 @@ class MemeBot:
             if self.handle_draft(chat_id, user_id, message):
                 return
         if chat.get("type") == "private":
-            self.api.send(chat_id, "Use /start to browse memes and vote. Only the organizer can submit entries.")
+            self.api.send(chat_id, "Use /start to browse meme entries. Only the organizer can submit entries.")
 
     def run(self):
         # RUN_SECONDS=0 is the original continuous mode. GitHub Actions uses a
@@ -469,10 +362,9 @@ class MemeBot:
         LOGGER.info("JOBBY meme bot ready (@%s)", self.username)
         try:
             self.api.call("setMyCommands", commands=[
-                {"command": "start", "description": "Open the contest"},
-                {"command": "entries", "description": "Browse memes"},
-                {"command": "leaderboard", "description": "View rankings"},
-                {"command": "rules", "description": "View voting rules"},
+                {"command": "start", "description": "Open the JOBBY meme gallery"},
+                {"command": "entries", "description": "Browse meme entries"},
+                {"command": "about", "description": "About the gallery"},
                 {"command": "myid", "description": "Show your Telegram numeric ID"},
             ])
         except TelegramError:

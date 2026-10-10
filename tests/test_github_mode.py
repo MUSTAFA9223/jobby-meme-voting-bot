@@ -43,7 +43,7 @@ class GitHubRunnerTests(unittest.TestCase):
         self.assertTrue(any(c[0] == 'send' for c in api.calls))
         store.close()
 
-    def test_expired_callback_not_preventing_vote(self):
+    def test_expired_callback_does_not_prevent_gallery_navigation(self):
         class ExpiredAPI(FakeAPI):
             def ack(self, callback_id, text=''):
                 raise TelegramError('Too old')
@@ -51,9 +51,9 @@ class GitHubRunnerTests(unittest.TestCase):
         api = ExpiredAPI()
         bot = MemeBot(api,store,{444})
         store.create_entry('photo','https://x.com/art/status/12','art','creator',444)
-        bot.handle_callback({'id':'expired','data':'vote:1','from': {'id': 333, 'username': 'voter'},
+        bot.handle_callback({'id':'expired','data':'nav:1','from': {'id': 333, 'username': 'viewer'},
                              'message': {'message_id':1, 'photo':[{'file_id':'1'}],
                               'chat':{'type':'private','id':333}}})
-        self.assertTrue(store.has_voted(333,1))
-        self.assertTrue(any(c[0] == 'send' and 'Vote recorded' in c[2] for c in api.calls))
+        self.assertTrue(any(c[0] == 'call' and c[1] == 'editMessageMedia' for c in api.calls))
+        self.assertEqual(store.db.execute('SELECT COUNT(*) FROM votes').fetchone()[0], 0)
         store.close()

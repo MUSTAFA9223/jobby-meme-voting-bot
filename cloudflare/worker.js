@@ -31,16 +31,14 @@ export class Contest {
   }
   static async load(env, userId) {
     const queries = [
-      `SELECT e.*, COALESCE(v.n,0) votes, COALESCE(r.n,0) rating_count, COALESCE(r.avg_stars,0) average_stars FROM entries e LEFT JOIN (SELECT entry_id,COUNT(*) n FROM votes GROUP BY entry_id) v ON v.entry_id=e.id LEFT JOIN (SELECT entry_id,COUNT(*) n,AVG(value) avg_stars FROM ratings GROUP BY entry_id) r ON r.entry_id=e.id`,
+      'SELECT * FROM entries',
       'SELECT key,value FROM config', 'SELECT * FROM drafts WHERE admin_id=?',
-      'SELECT entry_id FROM votes WHERE user_id=?', 'SELECT entry_id,value FROM ratings WHERE user_id=?',
       'SELECT * FROM destinations WHERE active=1 ORDER BY title,chat_id'
     ];
-    const result = await env.DB.batch(queries.map((q,i) => i < 2 || i === 5 ? env.DB.prepare(q) : env.DB.prepare(q).bind(userId)));
+    const result = await env.DB.batch(queries.map((q,i) => i < 2 || i === 3 ? env.DB.prepare(q) : env.DB.prepare(q).bind(userId)));
     return new Contest(env, {entries: result[0].results, config: Object.fromEntries(result[1].results.map(r=>[r.key,r.value])),
       draft: result[2].results[0] ? {step:result[2].results[0].step,data:JSON.parse(result[2].results[0].data)} : null,
-      votes:new Set(result[3].results.map(r=>r.entry_id)), ratings:Object.fromEntries(result[4].results.map(r=>[r.entry_id,r.value])),
-      destinations:result[5].results}, userId);
+      destinations:result[3].results}, userId);
   }
   write(sql, ...args) { this.sql.push(this.env.DB.prepare(sql).bind(...args)); }
   api(method, payload) { this.responses.push({method,payload}); }
@@ -51,10 +49,9 @@ export class Contest {
     this.api(method,{chat_id,[field]:file_id,caption,parse_mode:'HTML',...(reply_markup?{reply_markup}:{})});
   }
   ack(id,text='') { this.api('answerCallbackQuery',{callback_query_id:id,text}); }
-  get status() { return this.state.config.status || 'open'; }
   isAdmin() { return this.admins.has(this.userId); }
   entry(id,active=true) { return this.state.entries.find(e=>e.id===id && (!active||e.active===1)); }
-  standings() { return this.state.entries.filter(e=>e.active===1).sort((a,b)=>b.votes-a.votes || b.average_stars-a.average_stars || b.rating_count-a.rating_count || a.id-b.id); }
+  standings() { return this.state.entries.filter(e=>e.active===1).sort((a,b)=>a.id-b.id); }
   ids() { return this.state.entries.filter(e=>e.active===1).map(e=>e.id).sort((a,b)=>a-b); }
   draft(step,data) {
     this.state.draft={step,data};
@@ -70,22 +67,20 @@ export class Contest {
   }
   startDraft(chat) { this.draft('media',{}); this.send(chat,'➕ <b>Add JOBBY meme</b>\nStep 1/4: Send the meme as a photo, video, or GIF.\n/cancel to stop.'); }
   welcome(chat) {
-    const rows=[[button('🖼 Browse memes','menu:entries')],[button('🏆 Leaderboard','menu:leaderboard'),button('ℹ️ Rules','menu:rules')]];
+    const rows=[[button('🖼 Browse entries','menu:entries')],[button('ℹ️ About the gallery','menu:about')]];
     if(this.isAdmin()) rows.push([button('➕ Add meme (admin)','admin:add')]);
-    this.send(chat,'🏆 <b>JOBBY Meme Voting</b>\n\nBrowse the memes and vote once for every meme you support. Each vote is final and cannot be added twice.\nOnly the organizer can submit entries.',{inline_keyboard:rows});
+    this.send(chat,'🖼 <b>JOBBY Meme Gallery</b>\n\nBrowse official entries and open each creator’s original X post.\nOnly the organizer can add or publish entries.',{inline_keyboard:rows});
   }
-  rules(chat) { this.send(chat,`<b>Contest rules</b>\n• Each Telegram account can vote once for every meme.\n• A recorded vote is final and cannot be added twice or changed.\n• One 1–5 star rating per meme; ratings can be updated while voting is open.\n• Votes rank first; star averages break ties.\n• Organizers upload memes and original X links.\n• Status: <b>${esc(this.status.toUpperCase())}</b>.\nPlease vote fairly.`); }
-  caption(e) { return `🏆 <b>JOBBY MEME CONTEST — #${String(e.id).padStart(3,'0')}</b>\n\n🐦 X creator: <b>@${esc(e.x_username)}</b>\n💬 Telegram: <b>@${esc(e.telegram_username)}</b>\n🔗 Tweet: <a href="${esc(e.tweet_url)}">View original post on X</a>\n\n🗳 Votes: <b>${e.votes}</b> | ⭐ Rating: <b>${Number(e.average_stars).toFixed(2)}/5</b> (${e.rating_count} ratings)\nContest: <b>${esc(this.status.toUpperCase())}</b>\n\nYour vote: <b>${this.state.votes.has(e.id) ? 'Recorded' : 'Not voted'}</b> | Your rating: <b>${this.state.ratings[e.id] || '—'}</b>`; }
-  publicCaption(e) { return `🏆 <b>JOBBY MEME CONTEST — #${String(e.id).padStart(3,'0')}</b>\n\n🐦 X creator: <b>@${esc(e.x_username)}</b>\n💬 Telegram: <b>@${esc(e.telegram_username)}</b>\n🔗 Tweet: <a href="${esc(e.tweet_url)}">View original post on X</a>\n\n🗳 Votes: <b>${e.votes}</b> | ⭐ Rating: <b>${Number(e.average_stars).toFixed(2)}/5</b> (${e.rating_count} ratings)\nContest: <b>${esc(this.status.toUpperCase())}</b>\n\nVote and rate directly below.`; }
+  about(chat) { this.send(chat,'<b>JOBBY Meme Gallery</b>\n• Browse every official entry.\n• Open the original X post and creator profiles from each card.\n• Entries can only be added, changed, or published by the organizer.'); }
+  caption(e) { return `🖼 <b>JOBBY MEME ENTRY — #${String(e.id).padStart(3,'0')}</b>\n\n🐦 X creator: <b>@${esc(e.x_username)}</b>\n💬 Telegram: <b>@${esc(e.telegram_username)}</b>\n🔗 Original post: <a href="${esc(e.tweet_url)}">View on X</a>`; }
+  publicCaption(e) { return this.caption(e); }
   entryKeyboard(e) {
     const ids=this.ids(), i=ids.indexOf(e.id), before=ids[(i-1+ids.length)%ids.length], after=ids[(i+1)%ids.length];
-    return keyboard([1,2,3,4,5].map(n=>button(`⭐ ${n}`,`rate:${e.id}:${n}`)),[button('🗳 Vote for this meme',`vote:${e.id}`)],
-      [link('🐦 View Tweet on X',e.tweet_url)],[link('X creator',`https://x.com/${e.x_username}`),link('Telegram creator',`https://t.me/${e.telegram_username}`)],
-      [button('◀ Previous',`nav:${before}`),button('🏆 Top','menu:leaderboard'),button('Next ▶',`nav:${after}`)]);
+    return keyboard([link('🐦 View original post on X',e.tweet_url)],[link('X creator',`https://x.com/${e.x_username}`),link('Telegram creator',`https://t.me/${e.telegram_username}`)],
+      [button('◀ Previous',`nav:${before}`),button('🖼 Gallery','menu:entries'),button('Next ▶',`nav:${after}`)]);
   }
   publicKeyboard(e) {
-    return keyboard([1,2,3,4,5].map(n=>button(`⭐ ${n}`,`rate:${e.id}:${n}`)),[button('🗳 Vote for this meme',`vote:${e.id}`)],
-      [link('🐦 View Tweet on X',e.tweet_url)],[link('Open full voting',`https://t.me/${this.env.JOBBY_BOT_USERNAME}?start=m${e.id}`)]);
+    return keyboard([link('🐦 View original post on X',e.tweet_url)],[link('🖼 Open full gallery',`https://t.me/${this.env.JOBBY_BOT_USERNAME}?start=m${e.id}`)]);
   }
   show(chat,id,origin) {
     const e=this.entry(id); if(!e) {this.send(chat,'That entry is not available.');return;}
@@ -94,13 +89,6 @@ export class Contest {
     else this.media(chat,type,e.photo_file_id,this.caption(e),this.entryKeyboard(e));
   }
   browse(chat) { const ids=this.ids(); ids.length ? this.show(chat,ids[0]) : this.send(chat,'No meme entries yet. Check back soon!'); }
-  leaderboard(chat) {
-    const entries=this.standings().slice(0,10); if(!entries.length){this.send(chat,'No memes have been added yet.');return;}
-    const lines=entries.map((e,i)=>`${i+1}. <b>#${String(e.id).padStart(3,'0')} @${esc(e.x_username)}</b> — ${e.votes} votes | ⭐ ${Number(e.average_stars).toFixed(2)} (${e.rating_count})`);
-    const rows=[];for(let i=0;i<entries.length;i+=3) rows.push(entries.slice(i,i+3).map(e=>button(`View #${e.id}`,`nav:${e.id}`)));
-    rows.push([button('🖼 Browse all memes','menu:entries')]);
-    this.send(chat,`🏆 <b>JOBBY Leaderboard</b> (${esc(this.status.toUpperCase())})\n\n${lines.join('\n')}\n\nRanked by votes, then average stars.`,{inline_keyboard:rows});
-  }
   destinationList(chat) {
     const rows=this.state.destinations;
     if(!rows.length){this.send(chat,'No groups or channels are connected yet.\n\nGroup: add the bot, then send /register in the group.\nChannel: add the bot as an admin with permission to post, then forward any channel post to this private chat.');return;}
@@ -145,19 +133,18 @@ export class Contest {
     if(cmd==='/myid'){this.send(chat,`Your Telegram ID: <code>${this.userId}</code>`);return;}
     if(message.chat.type!=='private'&&['/register','/connect'].includes(cmd)){
       if(!this.isAdmin()){this.send(chat,'Only the JOBBY organizer can connect this chat.');return;}
-      this.setDestination(message.chat,true);this.send(chat,'✅ This chat is connected to JOBBY voting. Publishing is controlled from the bot private chat.');return;
+      this.setDestination(message.chat,true);this.send(chat,'✅ This chat is connected to the JOBBY meme gallery. Publishing is controlled from the bot private chat.');return;
     }
     if(message.chat.type!=='private'&&['/unregister','/disconnect'].includes(cmd)){
       if(!this.isAdmin()){this.send(chat,'Only the JOBBY organizer can disconnect this chat.');return;}
       this.setDestination(message.chat,false);this.send(chat,'This chat was disconnected from JOBBY publishing.');return;
     }
-    if(message.chat.type!=='private'){this.send(chat,'Open the voting bot in a private chat.');return;}
+    if(message.chat.type!=='private'){this.send(chat,'Open the JOBBY meme gallery in a private chat.');return;}
     if(cmd==='/start'){/^m\d{1,9}$/.test(parts[1]||'')?this.show(chat,Number(parts[1].slice(1))):this.welcome(chat);return;}
     if(['/entries','/memes'].includes(cmd)){this.browse(chat);return;}
-    if(['/leaderboard','/results'].includes(cmd)){this.leaderboard(chat);return;}
-    if(cmd==='/rules'){this.rules(chat);return;}
+    if(['/about','/rules'].includes(cmd)){this.about(chat);return;}
     if(!this.isAdmin()){this.send(chat,'Organizer-only command. Try /start.');return;}
-    if(['/admin','/help'].includes(cmd)) this.send(chat,'<b>JOBBY Admin</b>\n/add — Add photo, video, or GIF meme\n/cancel — Cancel draft\n/list — Entries\n/publish 12 — Publish in a group/channel\n/destinations — Connected groups/channels\n/register — Run inside a group to connect it\nForward a channel post here to connect that channel\n/remove 12 — Hide\n/restore 12 — Restore\n/pause — Freeze voting\n/resume — Reopen\n/close — Close voting\n/results — Leaderboard\n/stats — Counters\n/share 12 — Private voting link');
+    if(['/admin','/help'].includes(cmd)) this.send(chat,'<b>JOBBY Gallery Admin</b>\n/add — Add photo, video, or GIF meme\n/cancel — Cancel draft\n/list — Entries\n/publish 12 — Publish in a group/channel\n/destinations — Connected groups/channels\n/register — Run inside a group to connect it\nForward a channel post here to connect that channel\n/remove 12 — Hide\n/restore 12 — Restore\n/stats — Entry counters\n/share 12 — Private entry link');
     else if(cmd==='/add') this.startDraft(chat);
     else if(cmd==='/cancel'){this.clearDraft();this.send(chat,'Draft canceled. Nothing published.');}
     else if(cmd==='/destinations')this.destinationList(chat);
@@ -165,30 +152,23 @@ export class Contest {
       if(parts.length!==2||!/^\d+$/.test(parts[1]))this.send(chat,'Usage: /publish &lt;entry number&gt;');
       else this.publishMenu(chat,Number(parts[1]));
     }
-    else if(['/pause','/resume','/close'].includes(cmd)){
-      const status={'/pause':'paused','/resume':'open','/close':'closed'}[cmd];this.state.config.status=status;this.write("UPDATE config SET value=? WHERE key='status'",status);this.send(chat,`Voting and ratings are now ${status}.`);
-    } else if(cmd==='/list') this.send(chat,'<b>Latest entries</b>\n'+(this.state.entries.slice().sort((a,b)=>b.id-a.id).slice(0,50).map(e=>`#${e.id} @${esc(e.x_username)} — ${e.active?'visible':'hidden'}`).join('\n')||'None'));
+    else if(cmd==='/list') this.send(chat,'<b>Latest entries</b>\n'+(this.state.entries.slice().sort((a,b)=>b.id-a.id).slice(0,50).map(e=>`#${e.id} @${esc(e.x_username)} — ${e.active?'visible':'hidden'}`).join('\n')||'None'));
     else if(cmd==='/stats'){
-      const active=this.standings();this.send(chat,`<b>Contest stats</b>\nActive: ${active.length}\nHidden: ${this.state.entries.length-active.length}\nValid votes: ${active.reduce((n,e)=>n+e.votes,0)}\nRatings: ${active.reduce((n,e)=>n+e.rating_count,0)}\nStatus: ${esc(this.status)}`);
+      const active=this.standings();this.send(chat,`<b>Gallery stats</b>\nVisible entries: ${active.length}\nHidden entries: ${this.state.entries.length-active.length}`);
     } else if(['/remove','/restore','/share'].includes(cmd)){
       if(parts.length!==2||!/^\d+$/.test(parts[1])){this.send(chat,`Usage: ${esc(cmd)} &lt;entry number&gt;`);return;}
       const id=Number(parts[1]),e=this.entry(id,cmd==='/share');if(!e){this.send(chat,'Entry not found.');return;}
-      if(cmd==='/share')this.send(chat,`Share: https://t.me/${esc(this.env.JOBBY_BOT_USERNAME)}?start=m${id}`);
+      if(cmd==='/share')this.send(chat,`Share entry: https://t.me/${esc(this.env.JOBBY_BOT_USERNAME)}?start=m${id}`);
       else {e.active=cmd==='/restore'?1:0;this.write('UPDATE entries SET active=? WHERE id=?',e.active,id);this.send(chat,`Entry #${id} ${e.active?'restored':'hidden'}.`);}
     } else this.send(chat,'Unknown command. Try /admin.');
-  }
-  async hasAccess() {
-    if(!this.env.JOBBY_REQUIRED_CHAT_ID||this.isAdmin())return true;
-    try {const r=await telegram(this.env,'getChatMember',{chat_id:this.env.JOBBY_REQUIRED_CHAT_ID,user_id:this.userId});return ['member','administrator','creator'].includes(r.status)||(r.status==='restricted'&&r.is_member===true);}catch{return false;}
   }
   async callback(c) {
     const chat=c.message?.chat,id=c.id,action=c.data||'',cid=chat?.id;
     if(!cid){this.ack(id,'Message unavailable.');return;}
     const privateChat=chat.type==='private';
-    if(!privateChat&&!/^(vote|rate):/.test(action)){this.ack(id,'Open the bot private chat for this action.');return;}
+    if(!privateChat){this.ack(id,'Open the bot private chat for this action.');return;}
     if(action==='menu:entries'){this.ack(id);this.browse(cid);return;}
-    if(action==='menu:leaderboard'){this.ack(id);this.leaderboard(cid);return;}
-    if(action==='menu:rules'){this.ack(id);this.rules(cid);return;}
+    if(action==='menu:about'){this.ack(id);this.about(cid);return;}
     if(action.startsWith('admin:')){
       if(!this.isAdmin()){this.ack(id,'Organizer only.');return;}
       if(action==='admin:add'){this.ack(id);this.startDraft(cid);}
@@ -210,26 +190,14 @@ export class Contest {
         if(this.state.draft?.step!=='confirm'){this.ack(id,'Draft already handled or expired.');return;}
         const d=this.state.draft.data,n=Math.max(0,...this.state.entries.map(e=>e.id))+1;
         this.write('INSERT INTO entries(id,photo_file_id,media_type,tweet_url,x_username,telegram_username,created_by,created_at) VALUES(?,?,?,?,?,?,?,?)',n,d.photo_file_id,d.media_type||'photo',d.tweet_url,d.x_username,d.telegram_username,this.userId,now());
-        this.state.entries.push({...d,media_type:d.media_type||'photo',id:n,created_by:this.userId,active:1,votes:0,rating_count:0,average_stars:0});this.clearDraft();
-        this.ack(id,`Entry #${n} published`);this.send(cid,`✅ Entry #${n} saved.`,keyboard([button('📣 Publish to group/channel',`admin:publish:${n}`),button('🔗 Get private voting link',`admin:share:${n}`)]));this.show(cid,n);
+        this.state.entries.push({...d,media_type:d.media_type||'photo',id:n,created_by:this.userId,active:1});this.clearDraft();
+        this.ack(id,`Entry #${n} published`);this.send(cid,`✅ Entry #${n} saved.`,keyboard([button('📣 Publish to group/channel',`admin:publish:${n}`),button('🔗 Get private entry link',`admin:share:${n}`)]));this.show(cid,n);
       } else this.ack(id,'Unknown action.');return;
     }
-    const m=action.match(/^(nav|vote|rate):(\d+)(?::([1-5]))?$/);
-    if(!m||(m[1]==='rate'?!m[3]:!!m[3])){this.ack(id,'Unknown action.');return;}
-    const entryId=Number(m[2]),e=this.entry(entryId);if(!e){this.ack(id,'Entry unavailable.');return;}
-    if(m[1]==='nav'){if(!privateChat){this.ack(id,'Open the bot for the full gallery.');return;}this.ack(id);this.show(cid,entryId,c.message);return;}
-    if(!await this.hasAccess()){this.ack(id,'Join the official community first.');return;}
-    if((c.from.username||'').toLowerCase()===e.telegram_username.toLowerCase()){this.ack(id,'Creators cannot vote for their own meme.');return;}
-    if(this.status!=='open'){this.ack(id,'Voting and ratings are closed.');return;}
-    if(m[1]==='vote'){
-      const voted=this.state.votes.has(entryId);this.ack(id,voted?'You already voted for this meme.':'Vote recorded!');
-      if(!voted){e.votes++;this.state.votes.add(entryId);
-        this.write('INSERT OR IGNORE INTO votes(user_id,entry_id,updated_at) VALUES(?,?,?)',this.userId,entryId,now());}
-    } else {
-      const value=Number(m[3]),old=this.state.ratings[entryId];e.average_stars=(e.average_stars*e.rating_count-(old||0)+value)/(e.rating_count+(old?0:1));if(!old)e.rating_count++;
-      this.state.ratings[entryId]=value;this.write('INSERT INTO ratings(user_id,entry_id,value,updated_at) VALUES(?,?,?,?) ON CONFLICT(user_id,entry_id) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at',this.userId,entryId,value,now());this.ack(id,'Rating saved!');
-    }
-    if(c.message.photo||c.message.video||c.message.animation)this.api('editMessageCaption',{chat_id:cid,message_id:c.message.message_id,caption:privateChat?this.caption(e):this.publicCaption(e),parse_mode:'HTML',reply_markup:privateChat?this.entryKeyboard(e):this.publicKeyboard(e)});
+    const m=action.match(/^nav:(\d+)$/);
+    if(!m){this.ack(id,'This action is no longer available.');return;}
+    const entryId=Number(m[1]),e=this.entry(entryId);if(!e){this.ack(id,'Entry unavailable.');return;}
+    this.ack(id);this.show(cid,entryId,c.message);
   }
   async handle(update) {
     if(update.callback_query){await this.callback(update.callback_query);return;}
@@ -240,10 +208,10 @@ export class Contest {
     }
     const m=update.message||update.channel_post;if(!m?.chat?.id||!m.from?.id)return;
     const forwardedChannel=m.forward_origin?.type==='channel'?m.forward_origin.chat:(m.forward_from_chat?.type==='channel'?m.forward_from_chat:null);
-    if(this.isAdmin()&&m.chat.type==='private'&&forwardedChannel){this.setDestination(forwardedChannel,true);this.send(m.chat.id,`✅ Channel connected: ${esc(forwardedChannel.title||forwardedChannel.id)}. Use /publish &lt;entry number&gt; to post voting.`);return;}
+    if(this.isAdmin()&&m.chat.type==='private'&&forwardedChannel){this.setDestination(forwardedChannel,true);this.send(m.chat.id,`✅ Channel connected: ${esc(forwardedChannel.title||forwardedChannel.id)}. Use /publish &lt;entry number&gt; to publish an entry.`);return;}
     if(m.text?.startsWith('/'))this.command(m);
     else if(this.isAdmin()&&m.chat.type==='private'&&this.handleDraft(m.chat.id,m))return;
-    else if(m.chat.type==='private')this.send(m.chat.id,'Use /start to browse memes and vote. Only the organizer can submit entries.');
+    else if(m.chat.type==='private')this.send(m.chat.id,'Use /start to browse the JOBBY meme gallery. Only the organizer can add entries.');
   }
 }
 

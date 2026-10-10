@@ -56,7 +56,7 @@ class BotTests(unittest.TestCase):
             "message": message,
         }})
 
-    def test_admin_upload_and_vote_flow(self):
+    def test_admin_upload_and_gallery_flow(self):
         self.message(444, "/add")
         self.assertEqual(self.db.draft(444)[0], "photo")
         self.message(444, photo="telegram-photo-file-id")
@@ -71,13 +71,12 @@ class BotTests(unittest.TestCase):
         self.assertEqual(self.db.entry_ids(), [1])
         entry = self.db.entry(1)
         self.assertEqual(entry["photo_file_id"], "telegram-photo-file-id")
-        self.callback(200, "vote:1")
-        self.callback(200, "rate:1:5")
-        self.assertTrue(self.db.has_voted(200, 1))
-        self.assertEqual(self.db.rating_for(200, 1), 5)
-        self.assertEqual(self.db.standings()[0]["votes"], 1)
-        self.assertEqual(self.db.standings()[0]["average_stars"], 5)
-        self.assertTrue(any(c[0] == "call" and c[1] == "editMessageCaption" for c in self.api.calls))
+        cards = [c for c in self.api.calls if c[0] == "photo"]
+        caption, markup = cards[-1][3], cards[-1][4]
+        self.assertIn("JOBBY MEME ENTRY", caption)
+        self.assertIn("Original X post", caption)
+        callbacks = [button.get("callback_data", "") for row in markup["inline_keyboard"] for button in row]
+        self.assertFalse(any(x.startswith(("vote:", "rate:")) for x in callbacks))
 
     def test_non_admin_cannot_publish(self):
         self.message(123, "/add")
@@ -87,22 +86,14 @@ class BotTests(unittest.TestCase):
         self.callback(123, "admin:confirm")
         self.assertEqual(self.db.entry_ids(), [])
 
-    def test_self_vote_and_rating_block(self):
+    def test_legacy_vote_and_rating_callbacks_are_disabled(self):
         self.db.create_entry("photo", "https://x.com/user/status/2", "artist", "artisttelegram", 444)
-        self.callback(101, "vote:1", username="ARTISTTELEGRAM")
-        self.callback(101, "rate:1:5", username="artisttelegram")
-        self.assertEqual(self.db.counts()["voters"], 0)
-        self.assertEqual(self.db.counts()["ratings"], 0)
-
-    def test_membership_guard(self):
-        self.bot.required_chat = "@JOBBYChat"
-        self.db.create_entry("photo", "https://x.com/user/status/2", "artist", "artisttelegram", 444)
-        self.api.member_result = {"status": "left"}
         self.callback(101, "vote:1")
-        self.assertFalse(self.db.has_voted(101, 1))
-        self.api.member_result = {"status": "member"}
-        self.callback(101, "vote:1")
-        self.assertTrue(self.db.has_voted(101, 1))
+        self.callback(101, "rate:1:5")
+        self.assertEqual(self.db.db.execute("SELECT COUNT(*) FROM votes").fetchone()[0], 0)
+        self.assertEqual(self.db.db.execute("SELECT COUNT(*) FROM ratings").fetchone()[0], 0)
+        notices = [c[2] for c in self.api.calls if c[0] == "ack"]
+        self.assertEqual(notices[-2:], ["This action is no longer available."] * 2)
 
     def test_nav_edits_existing_photo_message(self):
         self.db.create_entry("photo", "https://x.com/user/status/2", "artist", "artisttelegram", 444)
@@ -124,16 +115,6 @@ class BotTests(unittest.TestCase):
         self.message(444, "https://x.com/user/status/1")
         self.message(444, "bad/name")
         self.assertEqual(self.db.draft(444)[0], "x")
-
-    def test_admin_close_and_reopen(self):
-        self.db.create_entry("photo", "https://x.com/user/status/2", "artist", "artisttelegram", 444)
-        self.message(444, "/close")
-        self.callback(101, "vote:1")
-        self.assertFalse(self.db.has_voted(101, 1))
-        self.message(444, "/resume")
-        self.callback(101, "vote:1")
-        self.assertTrue(self.db.has_voted(101, 1))
-
 
 if __name__ == "__main__":
     unittest.main()

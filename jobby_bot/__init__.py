@@ -1,1 +1,1 @@
-"""JOBBY Meme Voting Bot."""
+"""JOBBY Meme Gallery Bot."""

@@ -25,46 +25,11 @@ class StoreTests(unittest.TestCase):
         self.assertTrue(self.store.set_active(self.b, True))
         self.assertEqual(self.store.entry_ids(), [1, 2])
 
-    def test_one_fixed_vote_per_meme_and_can_vote_for_all(self):
-        self.assertEqual(self.store.cast_vote(99, self.a), "saved")
-        self.assertEqual(self.store.cast_vote(99, self.a), "same")
-        self.assertEqual(self.store.cast_vote(99, self.b), "saved")
-        self.assertEqual(self.store.cast_vote(99, self.b), "same")
-        self.assertTrue(self.store.has_voted(99, self.a))
-        self.assertTrue(self.store.has_voted(99, self.b))
-        standings = self.store.standings()
-        self.assertEqual([(r["id"], r["votes"]) for r in standings], [(self.a, 1), (self.b, 1)])
-        self.assertEqual(self.store.counts()["voters"], 2)
-
-    def test_ratings_can_be_changed_but_not_duplicated(self):
-        self.assertEqual(self.store.rate(99, self.a, 1), "saved")
-        self.assertEqual(self.store.rate(99, self.a, 5), "saved")
-        self.assertEqual(self.store.rate(100, self.a, 3), "saved")
-        a = next(x for x in self.store.standings() if x["id"] == self.a)
-        self.assertEqual(a["rating_count"], 2)
-        self.assertEqual(a["average_stars"], 4.0)
-        self.assertEqual(self.store.rating_for(99, self.a), 5)
-        self.assertEqual(self.store.counts()["ratings"], 2)
-        with self.assertRaises(ValueError):
-            self.store.rate(99, self.a, 6)
-
-    def test_pause_and_close_block_actions(self):
-        self.store.set_status("paused")
-        self.assertEqual(self.store.cast_vote(99, self.a), "closed")
-        self.assertEqual(self.store.rate(99, self.a, 5), "closed")
-        self.store.set_status("closed")
-        self.assertEqual(self.store.cast_vote(99, self.a), "closed")
-        self.store.set_status("open")
-        self.assertEqual(self.store.cast_vote(99, self.a), "saved")
-
-    def test_hidden_entries_disappear_from_rankings_and_cannot_be_voted(self):
-        self.store.cast_vote(99, self.b)
+    def test_gallery_entries_are_in_publication_order(self):
+        self.assertEqual([r["id"] for r in self.store.standings()], [self.a, self.b])
         self.store.set_active(self.b, False)
-        self.assertEqual(self.store.cast_vote(100, self.b), "missing")
         self.assertEqual([r["id"] for r in self.store.standings()], [self.a])
-        self.assertEqual(self.store.counts()["voters"], 0)
-        self.store.cast_vote(99, self.a)
-        self.assertEqual(self.store.counts()["voters"], 1)
+        self.assertEqual(self.store.counts(), {"entries": 1, "hidden": 1})
 
     def test_draft_persists_with_cancel(self):
         self.store.save_draft(111, "photo", {"photo_file_id": "image"})
@@ -74,14 +39,7 @@ class StoreTests(unittest.TestCase):
         self.store.clear_draft(111)
         self.assertIsNone(self.store.draft(111))
 
-    def test_stars_break_vote_ties(self):
-        self.store.cast_vote(99, self.a)
-        self.store.cast_vote(100, self.b)
-        self.store.rate(101, self.a, 4)
-        self.store.rate(102, self.b, 5)
-        self.assertEqual(self.store.standings()[0]["id"], self.b)
-
-    def test_old_single_choice_votes_are_preserved_during_migration(self):
+    def test_legacy_records_are_preserved_but_not_used_by_gallery(self):
         with tempfile.TemporaryDirectory() as directory:
             filename = str(Path(directory) / "legacy.sqlite3")
             db = sqlite3.connect(filename)
@@ -104,9 +62,9 @@ class StoreTests(unittest.TestCase):
             db.close()
             migrated = Store(filename)
             try:
-                self.assertTrue(migrated.has_voted(99, 1))
-                self.assertEqual(migrated.cast_vote(99, 2), "saved")
-                self.assertTrue(migrated.has_voted(99, 2))
+                rows = migrated.db.execute("SELECT user_id, entry_id FROM votes").fetchall()
+                self.assertEqual([tuple(row) for row in rows], [(99, 1)])
+                self.assertEqual([r["id"] for r in migrated.standings()], [1, 2])
             finally:
                 migrated.close()
 

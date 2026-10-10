@@ -34,10 +34,10 @@ test('video and GIF memes publish with the correct Telegram media methods',async
   for(const u of inputs)assert.equal((await post(env,u)).status,200);
   assert.deepEqual({...db.prepare('SELECT photo_file_id,media_type FROM entries').get()},{photo_file_id:`${type}-file`,media_type:type});
   assert.ok(sent.some(x=>x.method===method&&x.payload.caption?.includes('Review before publishing')));
-  assert.ok(sent.some(x=>x.method===method&&x.payload.caption?.includes('JOBBY MEME CONTEST')));
+  assert.ok(sent.some(x=>x.method===method&&x.payload.caption?.includes('JOBBY MEME ENTRY')));
  }
 });
-test('connected groups and channels appear in the publish menu and receive media voting posts',async()=>{
+test('connected groups and channels receive gallery posts without voting controls',async()=>{
  const {env,db}=fixture(),sent=[];globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
  await post(env,membership(1,-100123,'JOBBY Community','supergroup'));
  const forwarded=message(2,'');forwarded.message.forward_origin={type:'channel',chat:{id:-100456,title:'JOBBY Channel',type:'channel'}};await post(env,forwarded);
@@ -48,7 +48,9 @@ test('connected groups and channels appear in the publish menu and receive media
  assert.ok(menu.payload.reply_markup.inline_keyboard.flat().some(x=>x.callback_data==='admin:post:1:-100123'));
  await post(env,cb(4,'admin:post:1:-100123',8355389673));
  const published=sent.find(x=>x.method==='sendVideo'&&x.payload.chat_id===-100123);
- assert.ok(published);assert.match(published.payload.caption,/Vote and rate directly below/);assert.match(published.payload.caption,/View original post on X/);assert.ok(published.payload.reply_markup.inline_keyboard.flat().some(x=>x.text==='🐦 View Tweet on X'&&x.url==='https://x.com/creator/status/1'));assert.ok(!published.payload.caption.includes('Your vote'));
+ assert.ok(published);assert.match(published.payload.caption,/JOBBY MEME ENTRY/);assert.match(published.payload.caption,/View on X/);
+ const buttons=published.payload.reply_markup.inline_keyboard.flat();assert.ok(buttons.some(x=>x.text==='🐦 View original post on X'&&x.url==='https://x.com/creator/status/1'));assert.ok(buttons.every(x=>!x.callback_data));
+ assert.ok(!/Votes|Rating|vote|rate/i.test(published.payload.caption));
 });
 test('only the configured organizer can connect a group or use submission controls',async()=>{
  const {env,db}=fixture(),sent=[];globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
@@ -58,21 +60,12 @@ test('only the configured organizer can connect a group or use submission contro
  await post(env,groupCommand);assert.equal(db.prepare('SELECT COUNT(*) n FROM destinations').get().n,0);
  await post(env,message(3,'/add',44));assert.ok(sent.some(x=>x.payload.text==='Organizer-only command. Try /start.'));
 });
-test('members vote and rate directly on a shared group or channel post',async()=>{
- const {env,db}=fixture(),sent=[];seed(db,1,'animation');globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
- assert.equal((await post(env,groupCb(1,'vote:1','animation'))).status,200);
- assert.equal((await post(env,groupCb(2,'rate:1:5','animation'))).status,200);
- assert.deepEqual({...db.prepare('SELECT user_id,entry_id FROM votes').get()},{user_id:44,entry_id:1});assert.equal(db.prepare('SELECT value FROM ratings').get().value,5);
- const edits=sent.filter(x=>x.method==='editMessageCaption');assert.equal(edits.length,2);assert.ok(edits.every(x=>x.payload.caption.includes('Vote and rate directly below.')&&!x.payload.caption.includes('Your vote')));
-});
-test('one fixed vote per meme; users can vote for every entry; ratings and permissions are enforced',async()=>{
- const {env,db}=fixture();seed(db);seed(db,2);globalThis.fetch=async()=>Response.json({ok:true,result:{}});
- for(const [i,data] of ['vote:1','vote:1','vote:2','vote:2','rate:2:5','rate:2:3'].entries())assert.equal((await post(env,cb(i+1,data))).status,200);
- assert.deepEqual(db.prepare('SELECT user_id,entry_id FROM votes ORDER BY entry_id').all().map(x=>({...x})),[{user_id:44,entry_id:1},{user_id:44,entry_id:2}]);
- assert.deepEqual(db.prepare('SELECT entry_id,COUNT(*) n FROM votes GROUP BY entry_id ORDER BY entry_id').all().map(x=>({...x})),[{entry_id:1,n:1},{entry_id:2,n:1}]);
- assert.equal(db.prepare('SELECT value FROM ratings').get().value,3);
- await post(env,message(5,'/pause',44));assert.equal(db.prepare("SELECT value FROM config WHERE key='status'").get().value,'open');
- await post(env,message(7,'/pause'));await post(env,cb(8,'vote:1',45));assert.equal(db.prepare('SELECT COUNT(*) n FROM votes').get().n,2);
+test('voting and rating callbacks are disabled and never write records',async()=>{
+ const {env,db}=fixture(),sent=[];seed(db);globalThis.fetch=async(url,opts)=>{sent.push(JSON.parse(opts.body));return Response.json({ok:true,result:{}});};
+ for(const [i,data] of ['vote:1','rate:1:5'].entries())assert.equal((await post(env,cb(i+1,data))).status,200);
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM votes').get().n,0);assert.equal(db.prepare('SELECT COUNT(*) n FROM ratings').get().n,0);
+ assert.ok(sent.filter(x=>x.callback_query_id).every(x=>x.text==='This action is no longer available.'));
+ const group=await post(env,groupCb(3,'vote:1'));assert.equal(group.status,200);assert.equal(db.prepare('SELECT COUNT(*) n FROM votes').get().n,0);
 });
 test('failed delivery retries the outbox without repeating draft mutations',async()=>{
  const {env,db}=fixture();globalThis.fetch=async()=>Response.json({ok:false,error_code:500},{status:500});

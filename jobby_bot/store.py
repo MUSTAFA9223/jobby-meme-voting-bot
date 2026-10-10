@@ -1,4 +1,4 @@
-"""Persistent SQLite contest storage; no external service is required."""
+"""Persistent SQLite gallery storage; no external service is required."""
 from __future__ import annotations
 
 import json
@@ -32,6 +32,7 @@ class Store:
                 created_at TEXT NOT NULL,
                 active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
             );
+            -- Legacy archival tables are retained to avoid destroying historical data.
             CREATE TABLE IF NOT EXISTS votes (
                 user_id INTEGER NOT NULL,
                 entry_id INTEGER NOT NULL REFERENCES entries(id),
@@ -89,15 +90,6 @@ class Store:
             self.db.execute("""INSERT INTO config(key,value) VALUES ('update_offset',?)
                 ON CONFLICT(key) DO UPDATE SET value=excluded.value""", (str(offset),))
 
-    def status(self) -> str:
-        return self.db.execute("SELECT value FROM config WHERE key='status'").fetchone()[0]
-
-    def set_status(self, status: str):
-        if status not in ("open", "paused", "closed"):
-            raise ValueError("Invalid contest status")
-        with self.db:
-            self.db.execute("UPDATE config SET value=? WHERE key='status'", (status,))
-
     def create_entry(self, photo_file_id: str, tweet_url: str, x_username: str,
                      telegram_username: str, created_by: int) -> int:
         with self.db:
@@ -121,72 +113,17 @@ class Store:
             cur = self.db.execute("UPDATE entries SET active=? WHERE id=?", (int(active), entry_id))
             return cur.rowcount > 0
 
-    def cast_vote(self, user_id: int, entry_id: int) -> str:
-        """Record one permanent vote per Telegram account and meme."""
-        with self.db:
-            if self.status() != "open":
-                return "closed"
-            if not self.entry(entry_id):
-                return "missing"
-            if self.has_voted(user_id, entry_id):
-                return "same"
-            self.db.execute("INSERT OR IGNORE INTO votes(user_id, entry_id, updated_at) VALUES (?, ?, ?)",
-                            (user_id, entry_id, now()))
-            return "saved"
-
-    def rate(self, user_id: int, entry_id: int, value: int) -> str:
-        if value not in range(1, 6):
-            raise ValueError("Rating must be from 1 to 5")
-        with self.db:
-            if self.status() != "open":
-                return "closed"
-            if not self.entry(entry_id):
-                return "missing"
-            self.db.execute("""INSERT INTO ratings(user_id, entry_id, value, updated_at)
-                VALUES (?, ?, ?, ?) ON CONFLICT(user_id, entry_id)
-                DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at""",
-                (user_id, entry_id, value, now()))
-            return "saved"
-
-    def vote_for(self, user_id: int) -> int | None:
-        row = self.db.execute("SELECT entry_id FROM votes WHERE user_id=?", (user_id,)).fetchone()
-        return row[0] if row else None
-
-    def has_voted(self, user_id: int, entry_id: int) -> bool:
-        row = self.db.execute(
-            "SELECT 1 FROM votes WHERE user_id=? AND entry_id=?", (user_id, entry_id)
-        ).fetchone()
-        return row is not None
-
-    def rating_for(self, user_id: int, entry_id: int) -> int | None:
-        row = self.db.execute("SELECT value FROM ratings WHERE user_id=? AND entry_id=?", (user_id, entry_id)).fetchone()
-        return row[0] if row else None
-
     def standings(self) -> list[dict]:
-        """Order by vote count, then mean stars and number of star ratings."""
-        rows = self.db.execute("""
-            SELECT e.*,
-                COALESCE(v.n, 0) AS votes,
-                COALESCE(r.n, 0) AS rating_count,
-                COALESCE(r.avg_stars, 0) AS average_stars
-            FROM entries e
-            LEFT JOIN (SELECT entry_id, COUNT(*) AS n FROM votes GROUP BY entry_id) v
-                ON v.entry_id=e.id
-            LEFT JOIN (SELECT entry_id, COUNT(*) AS n, AVG(value) AS avg_stars
-                FROM ratings GROUP BY entry_id) r ON r.entry_id=e.id
-            WHERE e.active=1
-            ORDER BY votes DESC, average_stars DESC, rating_count DESC, e.id ASC
-        """).fetchall()
+        """Return visible gallery entries in publication order."""
+        rows = self.db.execute("SELECT * FROM entries WHERE active=1 ORDER BY id ASC").fetchall()
         return [dict(row) for row in rows]
 
     def counts(self) -> dict:
         row = self.db.execute("""
             SELECT (SELECT COUNT(*) FROM entries WHERE active=1),
-                   (SELECT COUNT(*) FROM entries WHERE active=0),
-                   (SELECT COUNT(*) FROM votes v JOIN entries e ON e.id=v.entry_id WHERE e.active=1),
-                   (SELECT COUNT(*) FROM ratings r JOIN entries e ON e.id=r.entry_id WHERE e.active=1)
+                   (SELECT COUNT(*) FROM entries WHERE active=0)
         """).fetchone()
-        return dict(zip(("entries", "hidden", "voters", "ratings"), row))
+        return dict(zip(("entries", "hidden"), row))
 
     def save_draft(self, admin_id: int, step: str, data: dict):
         with self.db:

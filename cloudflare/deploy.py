@@ -105,8 +105,8 @@ def main():
         cf(endpoint, {'sql': 'DROP TABLE votes_single_choice'})
         cf(endpoint, {'sql': 'CREATE INDEX IF NOT EXISTS idx_votes_entry ON votes(entry_id)'})
     if vote_primary_key != ['user_id', 'entry_id']:
-        # Preserve every existing vote while changing from one global vote to
-        # one permanent vote per account and meme. Reruns skip this migration.
+        # Preserve legacy records non-destructively while normalizing the old schema.
+        # Gallery code never reads or writes these archived rows.
         cf(endpoint, {'sql': 'DROP INDEX IF EXISTS idx_votes_entry'})
         cf(endpoint, {'sql': 'ALTER TABLE votes RENAME TO votes_single_choice'})
         cf(endpoint, {'sql': '''CREATE TABLE votes (
@@ -119,7 +119,7 @@ def main():
             SELECT user_id,entry_id,updated_at FROM votes_single_choice'''})
         cf(endpoint, {'sql': 'DROP TABLE votes_single_choice'})
         cf(endpoint, {'sql': 'CREATE INDEX idx_votes_entry ON votes(entry_id)'})
-    # A marker makes reruns safe. Never replace an existing live contest.
+    # A marker makes reruns safe. Never replace existing live gallery data.
     marker = cf(endpoint, {'sql': "SELECT value FROM config WHERE key='github_migrated'"})[0]['results']
     if not marker:
         occupied = cf(endpoint, {'sql': 'SELECT (SELECT COUNT(*) FROM entries)+(SELECT COUNT(*) FROM votes)+(SELECT COUNT(*) FROM ratings)+(SELECT COUNT(*) FROM drafts) AS n'})[0]['results'][0]['n']
@@ -141,7 +141,7 @@ def main():
             cf(endpoint, {'sql': "DELETE FROM config WHERE key='github_migration_pending'"})
         finally:
             db.close()
-    print('Contest database ready; existing entries, votes and drafts preserved.')
+    print('Gallery database ready; entries and drafts preserved; legacy data archived.')
     config = (ROOT / 'wrangler.jsonc').read_text().replace('REPLACE_WITH_D1_DATABASE_ID', database_id)
     (ROOT / 'wrangler.deploy.json').write_text(config)
     wrangler('deploy', '--config', 'wrangler.deploy.json')
@@ -195,18 +195,17 @@ def main():
         raise RuntimeError('Webhook configuration verification failed')
     print('Telegram webhook configured and verified.')
     telegram('setMyCommands', {'scope': {'type': 'all_private_chats'}, 'commands': [
-        {'command': 'start', 'description': 'Open JOBBY voting'},
+        {'command': 'start', 'description': 'Open the JOBBY meme gallery'},
         {'command': 'add', 'description': 'Add a photo, video, or GIF meme'},
-        {'command': 'entries', 'description': 'Browse contest entries'},
-        {'command': 'leaderboard', 'description': 'Show current leaderboard'},
+        {'command': 'entries', 'description': 'Browse gallery entries'},
         {'command': 'publish', 'description': 'Publish an entry to a connected chat'},
         {'command': 'destinations', 'description': 'List connected groups and channels'},
         {'command': 'admin', 'description': 'Show organizer controls'},
-        {'command': 'rules', 'description': 'Show contest rules'},
+        {'command': 'about', 'description': 'About the meme gallery'},
         {'command': 'cancel', 'description': 'Cancel the current draft'},
     ]})
     telegram('setMyCommands', {'scope': {'type': 'all_group_chats'}, 'commands': [
-        {'command': 'register', 'description': 'Connect this group to JOBBY voting'},
+        {'command': 'register', 'description': 'Connect this group to the JOBBY gallery'},
         {'command': 'unregister', 'description': 'Disconnect this group'},
         {'command': 'myid', 'description': 'Show your Telegram ID'},
     ]})

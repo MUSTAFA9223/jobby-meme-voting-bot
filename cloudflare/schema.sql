@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS entries (
  created_by INTEGER NOT NULL, created_at TEXT NOT NULL,
  active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1))
 );
+-- Legacy archival tables are retained to avoid destructive data loss.
+-- The gallery application never reads or writes these records.
 CREATE TABLE IF NOT EXISTS votes (
  user_id INTEGER NOT NULL, entry_id INTEGER NOT NULL REFERENCES entries(id), updated_at TEXT NOT NULL,
  PRIMARY KEY(user_id,entry_id)
