@@ -1,6 +1,12 @@
 name: Deploy JOBBY to Cloudflare
 on:
   workflow_dispatch:
+    inputs:
+      run_x_media_smoke:
+        description: Fetch a real X image through the Worker and deliver a private Telegram preview
+        required: false
+        default: false
+        type: boolean
 permissions:
   contents: read
 concurrency:
@@ -17,6 +23,7 @@ jobs:
       STATE_KEY: ${{ secrets.JOBBY_STATE_KEY }}
       DB_PATH: /tmp/jobby_migration.sqlite3
       JOBBY_REQUIRED_CHAT_ID: ${{ vars.JOBBY_REQUIRED_CHAT_ID }}
+      JOBBY_X_MEDIA_SMOKE: ${{ inputs.run_x_media_smoke }}
       WRANGLER_SEND_METRICS: 'false'
     steps:
       - uses: actions/checkout@v4
