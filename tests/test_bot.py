@@ -86,6 +86,40 @@ class BotTests(unittest.TestCase):
         self.callback(123, "admin:confirm")
         self.assertEqual(self.db.entry_ids(), [])
 
+    def test_admin_forward_prepares_media_link_and_usernames(self):
+        forwarded = {
+            "from": {"id": 444, "username": "admin"},
+            "chat": {"id": 444, "type": "private"},
+            "message_id": 12,
+            "photo": [{"file_id": "small"}, {"file_id": "forwarded-meme"}],
+            "caption": "Entry https://twitter.com/MemeArtist/status/98765?s=20",
+            "forward_origin": {"type": "user", "sender_user": {"id": 77, "username": "memeartisttg"}},
+        }
+        self.bot.handle_update({"message": forwarded})
+        step, data = self.db.draft(444)
+        self.assertEqual(step, "confirm")
+        self.assertEqual(data["photo_file_id"], "forwarded-meme")
+        self.assertEqual(data["tweet_url"], "https://x.com/MemeArtist/status/98765")
+        self.assertEqual(data["x_username"], "MemeArtist")
+        self.assertEqual(data["telegram_username"], "memeartisttg")
+        self.callback(444, "admin:confirm")
+        entry = self.db.entry(1)
+        self.assertEqual(entry["telegram_username"], "memeartisttg")
+
+    def test_forward_asks_only_for_missing_x_link(self):
+        forwarded = {
+            "from": {"id": 444}, "chat": {"id": 444, "type": "private"},
+            "message_id": 13, "photo": [{"file_id": "meme"}],
+            "forward_origin": {"type": "user", "sender_user": {"id": 88, "username": "creatorname"}},
+        }
+        self.bot.handle_update({"message": forwarded})
+        self.assertEqual(self.db.draft(444)[0], "tweet")
+        self.message(444, "https://x.com/creator/status/456")
+        step, data = self.db.draft(444)
+        self.assertEqual(step, "confirm")
+        self.assertEqual(data["x_username"], "creator")
+        self.assertEqual(data["telegram_username"], "creatorname")
+
     def test_legacy_vote_and_rating_callbacks_are_disabled(self):
         self.db.create_entry("photo", "https://x.com/user/status/2", "artist", "artisttelegram", 444)
         self.callback(101, "vote:1")

@@ -13,6 +13,7 @@ from .store import Store
 from .validation import normalize_telegram_handle, normalize_tweet, normalize_x_handle
 
 LOGGER = logging.getLogger("jobby_meme_bot")
+TWEET_URL = re.compile(r"https://(?:www\.)?(?:x\.com|twitter\.com)/[A-Za-z0-9_]{1,15}/status/\d+[^\s<>]*", re.I)
 
 
 def esc(value) -> str:
@@ -29,6 +30,35 @@ def data_button(text: str, action: str):
 
 def url_button(text: str, url: str):
     return {"text": text, "url": url}
+
+
+def tweet_from_message(message: dict) -> str:
+    candidates = [message.get("caption", ""), message.get("text", "")]
+    for field, source_field in (("caption_entities", "caption"), ("entities", "text")):
+        source = message.get(source_field, "")
+        for entity in message.get(field) or []:
+            if entity.get("type") == "text_link" and entity.get("url"):
+                candidates.append(entity["url"])
+            elif entity.get("type") == "url":
+                start, length = entity.get("offset", 0), entity.get("length", 0)
+                candidates.append(source[start:start + length])
+    for candidate in candidates:
+        for match in TWEET_URL.findall(str(candidate)):
+            try:
+                return normalize_tweet(match.rstrip("),.;!?"))
+            except ValueError:
+                pass
+    return ""
+
+
+def forwarded_telegram_username(message: dict) -> str:
+    origin = message.get("forward_origin") or {}
+    if origin.get("type") == "user":
+        return (origin.get("sender_user") or {}).get("username", "")
+    if origin.get("type") in ("chat", "channel"):
+        return (origin.get("sender_chat") or origin.get("chat") or {}).get("username", "")
+    return ((message.get("forward_from") or {}).get("username") or
+            (message.get("forward_from_chat") or {}).get("username", ""))
 
 
 class MemeBot:
@@ -114,6 +144,7 @@ class MemeBot:
     def admin_help(self, chat_id: int):
         self.api.send(chat_id,
             "<b>JOBBY Meme Bot — Admin</b>\n\n"
+            "Forward a participant meme here to detect its image, X link, and usernames automatically.\n"
             "/add — Submit a meme (photo → X post → X handle → TG handle → confirm)\n"
             "/cancel — Cancel current upload\n"
             "/list — See entries\n"
@@ -141,6 +172,37 @@ class MemeBot:
             inline([data_button("✅ Publish entry", "admin:confirm"),
                     data_button("❌ Cancel", "admin:cancel")]))
 
+    def handle_forwarded(self, chat_id: int, user_id: int, message: dict) -> bool:
+        if not any(message.get(key) for key in
+                   ("forward_origin", "forward_from", "forward_from_chat", "is_automatic_forward")):
+            return False
+        photos = message.get("photo") or []
+        if not photos:
+            self.api.send(chat_id, "Forward a meme containing a photo.")
+            return True
+        data = {"photo_file_id": photos[-1]["file_id"], "forwarded_import": True}
+        tweet_url = tweet_from_message(message)
+        if tweet_url:
+            data["tweet_url"] = tweet_url
+            data["x_username"] = tweet_url.split("/")[3]
+        telegram_username = forwarded_telegram_username(message)
+        if telegram_username:
+            try:
+                data["telegram_username"] = normalize_telegram_handle(telegram_username)
+            except ValueError:
+                pass
+        if "tweet_url" not in data:
+            self.store.save_draft(user_id, "tweet", data)
+            self.api.send(chat_id, "Meme received. Send the original X post URL to finish the entry.")
+        elif "telegram_username" not in data:
+            self.store.save_draft(user_id, "tg", data)
+            self.api.send(chat_id, "Meme and X link detected. Send the participant's Telegram username.")
+        else:
+            self.store.save_draft(user_id, "confirm", data)
+            self.api.send(chat_id, "✅ Meme, X link, X username, and Telegram username detected automatically.")
+            self.preview(chat_id, user_id)
+        return True
+
     def handle_draft(self, chat_id: int, user_id: int, message: dict):
         draft = self.store.draft(user_id)
         if not draft:
@@ -162,8 +224,17 @@ class MemeBot:
         try:
             if step == "tweet":
                 data["tweet_url"] = normalize_tweet(raw)
-                self.store.save_draft(user_id, "x", data)
-                self.api.send(chat_id, "Step 3/4: Send the participant's X username, for example @creator.")
+                if data.get("forwarded_import"):
+                    data["x_username"] = data["tweet_url"].split("/")[3]
+                    if data.get("telegram_username"):
+                        self.store.save_draft(user_id, "confirm", data)
+                        self.preview(chat_id, user_id)
+                    else:
+                        self.store.save_draft(user_id, "tg", data)
+                        self.api.send(chat_id, "X link detected. Send the participant's Telegram username.")
+                else:
+                    self.store.save_draft(user_id, "x", data)
+                    self.api.send(chat_id, "Step 3/4: Send the participant's X username, for example @creator.")
             elif step == "x":
                 data["x_username"] = normalize_x_handle(raw)
                 self.store.save_draft(user_id, "tg", data)
@@ -347,6 +418,8 @@ class MemeBot:
             self.handle_command(update)
             return
         if self.is_admin(user_id) and chat.get("type") == "private":
+            if not self.store.draft(user_id) and self.handle_forwarded(chat_id, user_id, message):
+                return
             if self.handle_draft(chat_id, user_id, message):
                 return
         if chat.get("type") == "private":

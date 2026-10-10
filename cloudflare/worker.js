@@ -20,6 +20,29 @@ export function normalizeTweet(raw) {
     return `https://x.com/${m[1]}/status/${m[2]}`;
   } catch { throw new Error('Send a valid X post URL: https://x.com/user/status/123'); }
 }
+function tweetFromMessage(message) {
+  const candidates=[];
+  for(const field of ['caption','text'])if(message[field])candidates.push(message[field]);
+  for(const field of ['caption_entities','entities'])for(const entity of message[field]||[]){
+    if(entity.type==='text_link'&&entity.url)candidates.push(entity.url);
+    else if(entity.type==='url'&&message[field==='caption_entities'?'caption':'text']){
+      const source=message[field==='caption_entities'?'caption':'text'];
+      candidates.push(source.slice(entity.offset,entity.offset+entity.length));
+    }
+  }
+  for(const candidate of candidates){
+    const matches=String(candidate).match(/https:\/\/(?:www\.)?(?:x\.com|twitter\.com)\/[A-Za-z0-9_]{1,15}\/status\/\d+(?:[^\s<>]*)?/ig)||[];
+    for(const match of matches)try{return normalizeTweet(match.replace(/[),.;!?]+$/,''));}catch{}
+  }
+  return '';
+}
+function xHandleFromTweet(url) { return new URL(url).pathname.split('/')[1]; }
+function forwardedTelegramUsername(message) {
+  const origin=message.forward_origin;
+  if(origin?.type==='user')return origin.sender_user?.username||'';
+  if(origin?.type==='chat'||origin?.type==='channel')return origin.sender_chat?.username||origin.chat?.username||'';
+  return message.forward_from?.username||message.forward_from_chat?.username||'';
+}
 
 // All mutations and outgoing responses are committed with the update ID in one
 // D1 transaction. A Telegram retry only replays undelivered responses.
@@ -111,6 +134,20 @@ export class Contest {
     const d=this.state.draft?.data;if(this.state.draft?.step!=='confirm'){this.send(chat,'No complete draft. Use /add.');return;}
     this.media(chat,d.media_type||'photo',d.photo_file_id,`<b>Review before publishing</b>\nX post: ${esc(d.tweet_url)}\nX creator: @${esc(d.x_username)}\nTelegram: @${esc(d.telegram_username)}`,keyboard([button('✅ Publish entry','admin:confirm'),button('❌ Cancel','admin:cancel')]));
   }
+  importForwarded(chat,message) {
+    const forwarded=message.forward_origin||message.forward_from||message.forward_from_chat||message.is_automatic_forward;
+    if(!forwarded)return false;
+    const photo=message.photo?.at(-1),video=message.video,animation=message.animation;
+    const media=photo?{media_type:'photo',photo_file_id:photo.file_id}:video?{media_type:'video',photo_file_id:video.file_id}:animation?{media_type:'animation',photo_file_id:animation.file_id}:null;
+    if(!media){this.send(chat,'Forward a meme containing a photo, video, or GIF.');return true;}
+    const tweet_url=tweetFromMessage(message),telegram_username=forwardedTelegramUsername(message);
+    const data={...media,forwarded_import:true};
+    if(tweet_url){data.tweet_url=tweet_url;data.x_username=xHandleFromTweet(tweet_url);}
+    if(telegram_username)try{data.telegram_username=normalizeHandle(telegram_username,true);}catch{}
+    if(!data.tweet_url){this.draft('tweet',data);this.send(chat,'Meme received. Send the original X post URL to finish the entry.');return true;}
+    if(!data.telegram_username){this.draft('tg',data);this.send(chat,"Meme and X link detected. Send the participant's Telegram username.");return true;}
+    this.draft('confirm',data);this.send(chat,'✅ Meme, X link, X username, and Telegram username detected automatically.');this.preview(chat);return true;
+  }
   handleDraft(chat,message) {
     const draft=this.state.draft;if(!draft)return false;const {step,data}=draft;
     if(step==='confirm'){this.send(chat,'Tap Publish or Cancel on the preview.');return true;}
@@ -122,7 +159,13 @@ export class Contest {
     }
     try {
       const text=message.text||'';
-      if(step==='tweet'){this.draft('x',{...data,tweet_url:normalizeTweet(text)});this.send(chat,"Step 3/4: Send the participant's X username.");}
+      if(step==='tweet'){
+        const tweet_url=normalizeTweet(text),next={...data,tweet_url,x_username:xHandleFromTweet(tweet_url)};
+        if(data.forwarded_import){
+          if(next.telegram_username){this.draft('confirm',next);this.preview(chat);}
+          else{this.draft('tg',next);this.send(chat,"X link detected. Send the participant's Telegram username.");}
+        }else{this.draft('x',next);this.send(chat,"Step 3/4: Send the participant's X username.");}
+      }
       else if(step==='x'){this.draft('tg',{...data,x_username:normalizeHandle(text)});this.send(chat,"Step 4/4: Send the participant's Telegram username.");}
       else if(step==='tg'){this.draft('confirm',{...data,telegram_username:normalizeHandle(text,true)});this.preview(chat);}
       else this.send(chat,'Unknown draft state. /cancel then /add.');
@@ -144,7 +187,7 @@ export class Contest {
     if(['/entries','/memes'].includes(cmd)){this.browse(chat);return;}
     if(['/about','/rules'].includes(cmd)){this.about(chat);return;}
     if(!this.isAdmin()){this.send(chat,'Organizer-only command. Try /start.');return;}
-    if(['/admin','/help'].includes(cmd)) this.send(chat,'<b>JOBBY Gallery Admin</b>\n/add — Add photo, video, or GIF meme\n/cancel — Cancel draft\n/list — Entries\n/publish 12 — Publish in a group/channel\n/destinations — Connected groups/channels\n/register — Run inside a group to connect it\nForward a channel post here to connect that channel\n/remove 12 — Hide\n/restore 12 — Restore\n/stats — Entry counters\n/share 12 — Private entry link');
+    if(['/admin','/help'].includes(cmd)) this.send(chat,'<b>JOBBY Gallery Admin</b>\nForward a participant meme here to import its media, X link, and usernames automatically\n/add — Add photo, video, or GIF meme manually\n/cancel — Cancel draft\n/list — Entries\n/publish 12 — Publish in a group/channel\n/destinations — Connected groups/channels\n/register — Run inside a group to connect it\nForward a channel post here to connect that channel\n/remove 12 — Hide\n/restore 12 — Restore\n/stats — Entry counters\n/share 12 — Private entry link');
     else if(cmd==='/add') this.startDraft(chat);
     else if(cmd==='/cancel'){this.clearDraft();this.send(chat,'Draft canceled. Nothing published.');}
     else if(cmd==='/destinations')this.destinationList(chat);
@@ -210,6 +253,7 @@ export class Contest {
     const forwardedChannel=m.forward_origin?.type==='channel'?m.forward_origin.chat:(m.forward_from_chat?.type==='channel'?m.forward_from_chat:null);
     if(this.isAdmin()&&m.chat.type==='private'&&forwardedChannel){this.setDestination(forwardedChannel,true);this.send(m.chat.id,`✅ Channel connected: ${esc(forwardedChannel.title||forwardedChannel.id)}. Use /publish &lt;entry number&gt; to publish an entry.`);return;}
     if(m.text?.startsWith('/'))this.command(m);
+    else if(this.isAdmin()&&m.chat.type==='private'&&!this.state.draft&&this.importForwarded(m.chat.id,m))return;
     else if(this.isAdmin()&&m.chat.type==='private'&&this.handleDraft(m.chat.id,m))return;
     else if(m.chat.type==='private')this.send(m.chat.id,'Use /start to browse the JOBBY meme gallery. Only the organizer can add entries.');
   }

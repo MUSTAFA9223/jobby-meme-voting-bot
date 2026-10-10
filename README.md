@@ -7,6 +7,7 @@ An admin-curated Telegram gallery for JOBBY meme entries. The organizer adds eac
 - Image, video, and GIF entry cards with original X links and creator profiles.
 - Previous/next browsing and private entry share links.
 - Admin-only add, publish, hide, restore, destination registration, and statistics.
+- Admin fast import: forward a participant's community message to the bot to detect its media, original X link, X username, and Telegram username, then confirm the prepared entry.
 - Publishing to registered groups and channels without interactive public controls.
 - Cloudflare Worker webhook deployment with D1 persistence and idempotent Telegram delivery.
 - GitHub-only polling fallback with encrypted state.
@@ -44,6 +45,8 @@ An admin-curated Telegram gallery for JOBBY meme entries. The organizer adds eac
 | `/admin` | Show organizer help |
 
 To register a group or channel destination, add the bot with permission to post and send `/register` there from the configured organizer account. Only the organizer can register or change destinations.
+
+To import a community submission, forward its original message to the bot's private chat from the organizer account. Keep the X post URL in the message or caption. Telegram may hide the original sender's username because of their privacy settings; when a value cannot be detected, the bot asks only for that missing field.
 
 ## Deployment
 
