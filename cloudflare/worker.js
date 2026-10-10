@@ -233,7 +233,11 @@ export class Contest {
   }
   async handle(update) {
     if(update.callback_query){await this.callback(update.callback_query);return;}
-    if(update.my_chat_member){const membership=update.my_chat_member,status=membership.new_chat_member?.status;this.setDestination(membership.chat,['member','administrator','creator'].includes(status));return;}
+    if(update.my_chat_member){
+      const membership=update.my_chat_member,status=membership.new_chat_member?.status,active=['member','administrator','creator'].includes(status);
+      if(!active||this.isAdmin())this.setDestination(membership.chat,active);
+      return;
+    }
     const m=update.message||update.channel_post;if(!m?.chat?.id||!m.from?.id)return;
     const forwardedChannel=m.forward_origin?.type==='channel'?m.forward_origin.chat:(m.forward_from_chat?.type==='channel'?m.forward_from_chat:null);
     if(this.isAdmin()&&m.chat.type==='private'&&forwardedChannel){this.setDestination(forwardedChannel,true);this.send(m.chat.id,`✅ Channel connected: ${esc(forwardedChannel.title||forwardedChannel.id)}. Use /publish &lt;entry number&gt; to post voting.`);return;}
