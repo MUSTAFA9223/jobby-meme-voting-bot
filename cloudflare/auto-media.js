@@ -12,6 +12,26 @@ function safeXMediaUrl(raw) {
   }
 }
 
+// FxEmbed may protect a raw video URL behind its own /2/go redirect. Unwrap
+// only that exact HTTPS endpoint, then apply the normal twimg host allowlist
+// to the nested target. This keeps arbitrary redirect targets out of Telegram.
+export function safeFxRedirectTarget(raw) {
+  const direct = safeXMediaUrl(raw);
+  if (direct) return direct;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'https:' || url.hostname !== 'api.fxtwitter.com' ||
+        url.pathname !== '/2/go') return '';
+    return safeXMediaUrl(url.searchParams.get('url'));
+  } catch {
+    return '';
+  }
+}
+
+function mediaFromUrl(url) {
+  return {type: new URL(url).hostname === 'pbs.twimg.com' ? 'photo' : 'video', url};
+}
+
 export function fxMediaFromPayload(payload) {
   const status = payload?.status || payload?.tweet;
   if (!status || ![200, undefined].includes(payload?.code)) return null;
@@ -41,13 +61,15 @@ async function fetchXMedia(postId, fetcher) {
   // still validated below.
   const options = () => ({headers: {Accept: 'application/json'}});
   const direct = `https://d.fxtwitter.com/${postId.user}/status/${postId.id}`;
-  try {
-    const response = await fetcher(direct, {method: 'HEAD', redirect: 'manual'});
-    const location = safeXMediaUrl(response.headers.get('location'));
-    if (location) {
-      return {type: new URL(location).hostname === 'pbs.twimg.com' ? 'photo' : 'video', url: location};
-    }
-  } catch {}
+  // A GET probe is included because some deployments do not implement HEAD.
+  // redirect:manual means a video body is never downloaded by this probe.
+  for (const method of ['HEAD', 'GET']) {
+    try {
+      const response = await fetcher(direct, {method, redirect: 'manual'});
+      const location = safeFxRedirectTarget(response.headers.get('location'));
+      if (location) return mediaFromUrl(location);
+    } catch {}
+  }
   try {
     const response = await fetcher(`https://api.fxtwitter.com/2/status/${postId.id}`, options());
     if (!response.ok) throw new Error('FxTwitter rejected the request');
