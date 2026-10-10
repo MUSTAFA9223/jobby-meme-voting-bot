@@ -2,9 +2,7 @@ name: JOBBY Meme Voting — GitHub-only polling
 
 on:
   workflow_dispatch:
-  schedule:
-    # GitHub can delay/skip scheduled jobs; this is NOT a continuously running bot.
-    - cron: '3,8,13,18,23,28,33,38,43,48,53,58 * * * *'
+  # Manual fallback only. Production delivery runs on Cloudflare Webhooks.
 
 permissions:
   contents: write
@@ -15,8 +13,7 @@ concurrency:
 
 jobs:
   poll:
-    # Keep scheduled jobs dormant until the owner enables the repository variable.
-    if: ${{ github.event_name == 'workflow_dispatch' || vars.JOBBY_ENABLED == 'true' }}
+    # Production uses Cloudflare; this job is retained only for a deliberate manual rollback.
     runs-on: ubuntu-latest
     timeout-minutes: 3
     env:
