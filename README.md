@@ -8,6 +8,7 @@ A standalone, admin-curated Telegram meme contest. The organizer adds each meme,
 - Organized cards with the meme, source link, X + Telegram accounts, vote count and average rating.
 - Exactly one permanent vote **per Telegram user ID and meme**; users may vote for every meme, but repeated taps never add another vote.
 - One rating **per Telegram user ID per entry**, editable during the contest.
+- Arabic and English interfaces with automatic Telegram-language detection and a saved `/language` selector.
 - Leaderboard: number of votes is primary, average stars and number of ratings are tiebreakers.
 - Entry share links, next/previous browsing, admin entry hiding/restoring, pause/resume/close, and counters.
 - Optional membership check against a Telegram community.

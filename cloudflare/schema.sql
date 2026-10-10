@@ -24,6 +24,11 @@ CREATE TABLE IF NOT EXISTS destinations (
  active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
  registered_by INTEGER NOT NULL, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS user_settings (
+ user_id INTEGER PRIMARY KEY,
+ language TEXT NOT NULL DEFAULT 'en' CHECK(language IN ('en','ar')),
+ updated_at TEXT NOT NULL
+);
 INSERT OR IGNORE INTO config VALUES ('status','open');
 CREATE TABLE IF NOT EXISTS webhook_updates (
  update_id INTEGER PRIMARY KEY, received_at TEXT NOT NULL, completed INTEGER NOT NULL DEFAULT 0
