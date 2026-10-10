@@ -48,7 +48,7 @@ test('connected groups and channels appear in the publish menu and receive media
  assert.ok(menu.payload.reply_markup.inline_keyboard.flat().some(x=>x.callback_data==='admin:post:1:-100123'));
  await post(env,cb(4,'admin:post:1:-100123',8355389673));
  const published=sent.find(x=>x.method==='sendVideo'&&x.payload.chat_id===-100123);
- assert.ok(published);assert.match(published.payload.caption,/صوّت وقيّم.*Vote and rate below/);assert.match(published.payload.caption,/عرض التغريدة الأصلية.*View original post/);assert.ok(published.payload.reply_markup.inline_keyboard.flat().some(x=>x.text.includes('عرض التغريدة')&&x.url==='https://x.com/creator/status/1'));assert.ok(!published.payload.caption.includes('Your vote'));
+ assert.ok(published);assert.match(published.payload.caption,/Vote and rate directly below/);assert.match(published.payload.caption,/View original post on X/);assert.ok(published.payload.reply_markup.inline_keyboard.flat().some(x=>x.text==='🐦 View Tweet on X'&&x.url==='https://x.com/creator/status/1'));assert.ok(!published.payload.caption.includes('Your vote'));
 });
 test('only the configured organizer can connect a group or use submission controls',async()=>{
  const {env,db}=fixture(),sent=[];globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
@@ -58,22 +58,12 @@ test('only the configured organizer can connect a group or use submission contro
  await post(env,groupCommand);assert.equal(db.prepare('SELECT COUNT(*) n FROM destinations').get().n,0);
  await post(env,message(3,'/add',44));assert.ok(sent.some(x=>x.payload.text==='Organizer-only command. Try /start.'));
 });
-test('Arabic language can be selected and is saved per Telegram user',async()=>{
- const {env,db}=fixture(),sent=[];globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
- await post(env,message(1,'/language',44));
- assert.ok(sent.some(x=>x.payload.text==='Choose your language:'));
- await post(env,cb(2,'lang:ar',44));
- assert.deepEqual({...db.prepare('SELECT user_id,language FROM user_settings WHERE user_id=44').get()},{user_id:44,language:'ar'});
- await post(env,message(3,'/start',44));
- assert.ok(sent.some(x=>x.payload.text?.includes('تصويت ميمات JOBBY')));
- assert.ok(sent.some(x=>x.payload.reply_markup?.inline_keyboard.flat().some(b=>b.text==='🖼 تصفح الميمات')));
-});
 test('members vote and rate directly on a shared group or channel post',async()=>{
  const {env,db}=fixture(),sent=[];seed(db,1,'animation');globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
  assert.equal((await post(env,groupCb(1,'vote:1','animation'))).status,200);
  assert.equal((await post(env,groupCb(2,'rate:1:5','animation'))).status,200);
  assert.deepEqual({...db.prepare('SELECT user_id,entry_id FROM votes').get()},{user_id:44,entry_id:1});assert.equal(db.prepare('SELECT value FROM ratings').get().value,5);
- const edits=sent.filter(x=>x.method==='editMessageCaption');assert.equal(edits.length,2);assert.ok(edits.every(x=>x.payload.caption.includes('صوّت وقيّم')&&x.payload.caption.includes('Vote and rate below.')&&!x.payload.caption.includes('Your vote')));
+ const edits=sent.filter(x=>x.method==='editMessageCaption');assert.equal(edits.length,2);assert.ok(edits.every(x=>x.payload.caption.includes('Vote and rate directly below.')&&!x.payload.caption.includes('Your vote')));
 });
 test('one fixed vote per meme; users can vote for every entry; ratings and permissions are enforced',async()=>{
  const {env,db}=fixture();seed(db);seed(db,2);globalThis.fetch=async()=>Response.json({ok:true,result:{}});

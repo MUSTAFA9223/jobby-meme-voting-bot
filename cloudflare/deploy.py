@@ -203,30 +203,12 @@ def main():
         {'command': 'destinations', 'description': 'List connected groups and channels'},
         {'command': 'admin', 'description': 'Show organizer controls'},
         {'command': 'rules', 'description': 'Show contest rules'},
-        {'command': 'language', 'description': 'العربية / English'},
         {'command': 'cancel', 'description': 'Cancel the current draft'},
     ]})
     telegram('setMyCommands', {'scope': {'type': 'all_group_chats'}, 'commands': [
         {'command': 'register', 'description': 'Connect this group to JOBBY voting'},
         {'command': 'unregister', 'description': 'Disconnect this group'},
         {'command': 'myid', 'description': 'Show your Telegram ID'},
-    ]})
-    telegram('setMyCommands', {'scope': {'type': 'all_private_chats'}, 'language_code': 'ar', 'commands': [
-        {'command': 'start', 'description': 'فتح تصويت JOBBY'},
-        {'command': 'add', 'description': 'إضافة صورة أو فيديو أو GIF'},
-        {'command': 'entries', 'description': 'تصفح مشاركات المسابقة'},
-        {'command': 'leaderboard', 'description': 'عرض المتصدرين'},
-        {'command': 'publish', 'description': 'نشر مشاركة في مجموعة أو قناة'},
-        {'command': 'destinations', 'description': 'عرض وجهات النشر المتصلة'},
-        {'command': 'admin', 'description': 'عرض أدوات الإدارة'},
-        {'command': 'rules', 'description': 'عرض قواعد المسابقة'},
-        {'command': 'language', 'description': 'العربية / English'},
-        {'command': 'cancel', 'description': 'إلغاء المسودة الحالية'},
-    ]})
-    telegram('setMyCommands', {'scope': {'type': 'all_group_chats'}, 'language_code': 'ar', 'commands': [
-        {'command': 'register', 'description': 'ربط المجموعة بتصويت JOBBY'},
-        {'command': 'unregister', 'description': 'فصل المجموعة'},
-        {'command': 'myid', 'description': 'عرض معرّف تيليجرام'},
     ]})
     print('Telegram command menus configured.')
     self_test_id = int(time.time() * 1000)
@@ -236,7 +218,7 @@ def main():
             'message_id': self_test_id,
             'date': int(time.time()),
             'chat': {'id': 8355389673, 'type': 'private'},
-            'from': {'id': 8355389673, 'is_bot': False, 'first_name': 'JOBBY Admin', 'language_code': 'ar'},
+            'from': {'id': 8355389673, 'is_bot': False, 'first_name': 'JOBBY Admin'},
             'text': '/start',
         },
     }
