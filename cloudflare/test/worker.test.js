@@ -70,6 +70,20 @@ test('video and GIF memes publish with the correct Telegram media methods',async
   assert.ok(sent.some(x=>x.method===method&&x.payload.caption?.includes('JOBBY MEME ENTRY')));
  }
 });
+test('gallery opens as a lightweight menu and caches X-only media after first view',async()=>{
+ const {env,db}=fixture(),sent=[];seed(db);db.prepare("UPDATE entries SET telegram_username='',photo_file_id='https://d.fxtwitter.com/creator/status/1' WHERE id=1").run();
+ globalThis.fetch=async(url,opts)=>{const method=String(url).split('/').at(-1),payload=JSON.parse(opts.body);sent.push({method,payload});return Response.json({ok:true,result:method==='sendPhoto'?{photo:[{file_id:'cached-photo'}]}:{}});};
+ await post(env,message(1,'/entries',44));
+ const menu=sent.find(x=>x.method==='sendMessage'&&x.payload.text.includes('Choose an entry'));
+ assert.ok(menu);assert.ok(menu.payload.reply_markup.inline_keyboard.flat().some(x=>x.callback_data==='open:1'));
+ assert.equal(sent.some(x=>x.method==='sendPhoto'),false);
+ await post(env,cb(2,'open:1',44));
+ const gallery=sent.find(x=>x.method==='sendPhoto');
+ assert.ok(gallery);assert.match(gallery.payload.caption,/@creator/);assert.doesNotMatch(gallery.payload.caption,/Telegram:/);
+ const buttons=gallery.payload.reply_markup.inline_keyboard.flat();
+ assert.ok(buttons.some(x=>x.text==='X creator'));assert.ok(buttons.every(x=>x.text!=='Telegram creator'));
+ assert.equal(db.prepare('SELECT photo_file_id FROM entries WHERE id=1').get().photo_file_id,'cached-photo');
+});
 test('connected groups and channels receive gallery posts without voting controls',async()=>{
  const {env,db}=fixture(),sent=[];globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
  await post(env,membership(1,-100123,'JOBBY Community','supergroup'));
@@ -82,12 +96,7 @@ test('connected groups and channels receive gallery posts without voting control
  await post(env,cb(4,'admin:post:1:-100123',8355389673));
  const published=sent.find(x=>x.method==='sendVideo'&&x.payload.chat_id===-100123);
  assert.ok(published);assert.match(published.payload.caption,/JOBBY MEME ENTRY/);assert.match(published.payload.caption,/View on X/);
- const buttons=published.payload.reply_markup.inline_keyboard.flat();
- assert.ok(buttons.some(x=>x.text==='🐦 View original post on X'&&x.url==='https://x.com/creator/status/1'));
- assert.ok(buttons.some(x=>x.text==='X creator'&&x.url==='https://x.com/creator'));
- assert.ok(buttons.some(x=>x.text==='Telegram creator'&&x.url==='https://t.me/creatorname'));
- assert.ok(buttons.some(x=>x.text==='🖼 Open full gallery'&&x.url==='https://t.me/JOBBYMemeVoteBot?start=m1'));
- assert.ok(buttons.every(x=>!x.callback_data));
+ const buttons=published.payload.reply_markup.inline_keyboard.flat();assert.ok(buttons.some(x=>x.text==='🐦 View original post on X'&&x.url==='https://x.com/creator/status/1'));assert.ok(buttons.every(x=>!x.callback_data));
  assert.ok(!/Votes|Rating|vote|rate/i.test(published.payload.caption));
 });
 test('only the configured organizer can connect a group or use submission controls',async()=>{
