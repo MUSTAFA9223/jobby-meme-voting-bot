@@ -95,15 +95,22 @@ export class Contest {
     this.send(chat,'🖼 <b>JOBBY Meme Gallery</b>\n\nBrowse official entries and open each creator’s original X post.\nOnly the organizer can add or publish entries.',{inline_keyboard:rows});
   }
   about(chat) { this.send(chat,'<b>JOBBY Meme Gallery</b>\n• Browse every official entry.\n• Open the original X post and creator profiles from each card.\n• Entries can only be added, changed, or published by the organizer.'); }
-  caption(e) { return `🖼 <b>JOBBY MEME ENTRY — #${String(e.id).padStart(3,'0')}</b>\n\n🐦 X creator: <b>@${esc(e.x_username)}</b>\n💬 Telegram: <b>@${esc(e.telegram_username)}</b>\n🔗 Original post: <a href="${esc(e.tweet_url)}">View on X</a>`; }
+  caption(e) {
+    const telegram=e.telegram_username?`\n💬 Telegram: <b>@${esc(e.telegram_username)}</b>`:'';
+    return `🖼 <b>JOBBY MEME ENTRY — #${String(e.id).padStart(3,'0')}</b>\n\n🐦 X creator: <b>@${esc(e.x_username)}</b>${telegram}\n🔗 Original post: <a href="${esc(e.tweet_url)}">View on X</a>`;
+  }
   publicCaption(e) { return this.caption(e); }
   entryKeyboard(e) {
     const ids=this.ids(), i=ids.indexOf(e.id), before=ids[(i-1+ids.length)%ids.length], after=ids[(i+1)%ids.length];
-    return keyboard([link('🐦 View original post on X',e.tweet_url)],[link('X creator',`https://x.com/${e.x_username}`),link('Telegram creator',`https://t.me/${e.telegram_username}`)],
+    const creators=[link('X creator',`https://x.com/${e.x_username}`)];
+    if(e.telegram_username)creators.push(link('Telegram creator',`https://t.me/${e.telegram_username}`));
+    return keyboard([link('🐦 View original post on X',e.tweet_url)],creators,
       [button('◀ Previous',`nav:${before}`),button('🖼 Gallery','menu:entries'),button('Next ▶',`nav:${after}`)]);
   }
   publicKeyboard(e) {
-        return keyboard([link('🐦 View original post on X',e.tweet_url)],[link('X creator',`https://x.com/${e.x_username}`),link('Telegram creator',`https://t.me/${e.telegram_username}`)],[link('🖼 Open full gallery',`https://t.me/${this.env.JOBBY_BOT_USERNAME}?start=m${e.id}`)]);
+    const creators=[link('X creator',`https://x.com/${e.x_username}`)];
+    if(e.telegram_username)creators.push(link('Telegram creator',`https://t.me/${e.telegram_username}`));
+    return keyboard([link('🐦 View original post on X',e.tweet_url)],creators,[link('🖼 Open full gallery',`https://t.me/${this.env.JOBBY_BOT_USERNAME}?start=m${e.id}`)]);
   }
   show(chat,id,origin) {
     const e=this.entry(id); if(!e) {this.send(chat,'That entry is not available.');return;}
