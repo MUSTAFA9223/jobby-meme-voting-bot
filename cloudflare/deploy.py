@@ -142,6 +142,25 @@ def main():
             cf(endpoint, {'sql': "DELETE FROM config WHERE key='github_migration_pending'"})
         finally:
             db.close()
+    contest_entries = json.loads((ROOT / 'contest-entries.json').read_text())
+    admin_ids = [int(value) for value in os.environ['JOBBY_ADMIN_IDS'].split(',') if value.strip().isdigit()]
+    if not admin_ids:
+        raise RuntimeError('No valid organizer ID configured')
+    for entry in contest_entries:
+        match = re.fullmatch(r'https://x\.com/([A-Za-z0-9_]{1,15})/status/(\d+)', entry.get('tweet_url', ''))
+        media_type = entry.get('media_type')
+        x_username = entry.get('x_username', '')
+        if not match or match.group(1).lower() != x_username.lower() or media_type not in ('photo', 'video', 'animation'):
+            raise RuntimeError('Invalid contest entry manifest')
+        media_url = f'https://d.fxtwitter.com/{x_username}/status/{match.group(2)}'
+        cf(endpoint, {'sql': '''INSERT INTO entries
+            (photo_file_id,media_type,tweet_url,x_username,telegram_username,created_by,created_at,active)
+            SELECT ?,?,?,?,?,?,?,1
+            WHERE NOT EXISTS (SELECT 1 FROM entries WHERE tweet_url=?)''',
+            'params': [media_url, media_type, entry['tweet_url'], x_username, '',
+                       admin_ids[0], time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                       entry['tweet_url']]})
+    print('Contest entry manifest imported; duplicate X links preserved as one entry.')
     print('Gallery database ready; entries and drafts preserved; legacy data archived.')
     config = (ROOT / 'wrangler.jsonc').read_text().replace('REPLACE_WITH_D1_DATABASE_ID', database_id)
     (ROOT / 'wrangler.deploy.json').write_text(config)
