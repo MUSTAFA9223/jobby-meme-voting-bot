@@ -70,6 +70,15 @@ test('video and GIF memes publish with the correct Telegram media methods',async
   assert.ok(sent.some(x=>x.method===method&&x.payload.caption?.includes('JOBBY MEME ENTRY')));
  }
 });
+test('X-only imported entries omit unavailable Telegram profile details',async()=>{
+ const {env,db}=fixture(),sent=[];seed(db);db.prepare("UPDATE entries SET telegram_username='' WHERE id=1").run();
+ globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
+ await post(env,message(1,'/entries',44));
+ const gallery=sent.find(x=>x.method==='sendPhoto');
+ assert.ok(gallery);assert.match(gallery.payload.caption,/@creator/);assert.doesNotMatch(gallery.payload.caption,/Telegram:/);
+ const buttons=gallery.payload.reply_markup.inline_keyboard.flat();
+ assert.ok(buttons.some(x=>x.text==='X creator'));assert.ok(buttons.every(x=>x.text!=='Telegram creator'));
+});
 test('connected groups and channels receive gallery posts without voting controls',async()=>{
  const {env,db}=fixture(),sent=[];globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
  await post(env,membership(1,-100123,'JOBBY Community','supergroup'));
