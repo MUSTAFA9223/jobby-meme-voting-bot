@@ -95,22 +95,19 @@ export class Contest {
     this.send(chat,'🖼 <b>JOBBY Meme Gallery</b>\n\nBrowse official entries and open each creator’s original X post.\nOnly the organizer can add or publish entries.',{inline_keyboard:rows});
   }
   about(chat) { this.send(chat,'<b>JOBBY Meme Gallery</b>\n• Browse every official entry.\n• Open the original X post and creator profiles from each card.\n• Entries can only be added, changed, or published by the organizer.'); }
-  caption(e) {
-    const telegram=e.telegram_username?`\n💬 Telegram: <b>@${esc(e.telegram_username)}</b>`:'';
-    return `🖼 <b>JOBBY MEME ENTRY — #${String(e.id).padStart(3,'0')}</b>\n\n🐦 X creator: <b>@${esc(e.x_username)}</b>${telegram}\n🔗 Original post: <a href="${esc(e.tweet_url)}">View on X</a>`;
-  }
+  caption(e) { return `🖼 <b>JOBBY MEME ENTRY — #${String(e.id).padStart(3,'0')}</b>\n\n🐦 X creator: <b>@${esc(e.x_username)}</b>\n💬 Telegram: <b>@${esc(e.telegram_username)}</b>\n🔗 Original post: <a href="${esc(e.tweet_url)}">View on X</a>`; }
   publicCaption(e) { return this.caption(e); }
   entryKeyboard(e) {
     const ids=this.ids(), i=ids.indexOf(e.id), before=ids[(i-1+ids.length)%ids.length], after=ids[(i+1)%ids.length];
-    const creators=[link('X creator',`https://x.com/${e.x_username}`)];
-    if(e.telegram_username)creators.push(link('Telegram creator',`https://t.me/${e.telegram_username}`));
-    return keyboard([link('🐦 View original post on X',e.tweet_url)],creators,
+    return keyboard([link('🐦 View original post on X',e.tweet_url)],[link('X creator',`https://x.com/${e.x_username}`),link('Telegram creator',`https://t.me/${e.telegram_username}`)],
       [button('◀ Previous',`nav:${before}`),button('🖼 Gallery','menu:entries'),button('Next ▶',`nav:${after}`)]);
   }
   publicKeyboard(e) {
-    const creators=[link('X creator',`https://x.com/${e.x_username}`)];
-    if(e.telegram_username)creators.push(link('Telegram creator',`https://t.me/${e.telegram_username}`));
-    return keyboard([link('🐦 View original post on X',e.tweet_url)],creators,[link('🖼 Open full gallery',`https://t.me/${this.env.JOBBY_BOT_USERNAME}?start=m${e.id}`)]);
+    return keyboard(
+      [link('🐦 View original post on X',e.tweet_url)],
+      [link('X creator',`https://x.com/${e.x_username}`),link('Telegram creator',`https://t.me/${e.telegram_username}`)],
+      [link('🖼 Open full gallery',`https://t.me/${this.env.JOBBY_BOT_USERNAME}?start=m${e.id}`)]
+    );
   }
   show(chat,id,origin) {
     const e=this.entry(id); if(!e) {this.send(chat,'That entry is not available.');return;}
@@ -118,13 +115,7 @@ export class Contest {
     if(origin&&(origin.photo||origin.video||origin.animation)) this.api('editMessageMedia',{chat_id:chat,message_id:origin.message_id,media:{type,media:e.photo_file_id,caption:this.caption(e),parse_mode:'HTML'},reply_markup:this.entryKeyboard(e)});
     else this.media(chat,type,e.photo_file_id,this.caption(e),this.entryKeyboard(e));
   }
-  browse(chat) {
-    const entries=this.standings();
-    if(!entries.length){this.send(chat,'No meme entries yet. Check back soon!');return;}
-    const buttons=entries.map(e=>button(`#${String(e.id).padStart(3,'0')} @${String(e.x_username).slice(0,15)}`,`open:${e.id}`));
-    const rows=[];for(let i=0;i<buttons.length;i+=2)rows.push(buttons.slice(i,i+2));
-    this.send(chat,`🖼 <b>JOBBY Meme Gallery</b> — ${entries.length} entries\n\nChoose an entry to view its meme and creator links.`,{inline_keyboard:rows});
-  }
+  browse(chat) { const ids=this.ids(); ids.length ? this.show(chat,ids[0]) : this.send(chat,'No meme entries yet. Check back soon!'); }
   destinationList(chat) {
     const rows=this.state.destinations;
     if(!rows.length){this.send(chat,'No groups or channels are connected yet.\n\nGroup: add the bot, then send /register in the group.\nChannel: add the bot as an admin with permission to post, then forward any channel post to this private chat.');return;}
@@ -259,11 +250,6 @@ export class Contest {
         this.ack(id,`Entry #${n} published`);this.send(cid,`✅ Entry #${n} saved.`,keyboard([button('📣 Publish to group/channel',`admin:publish:${n}`),button('🔗 Get private entry link',`admin:share:${n}`)]));this.show(cid,n);
       } else this.ack(id,'Unknown action.');return;
     }
-    const open=action.match(/^open:(\d+)$/);
-    if(open){
-      const entryId=Number(open[1]),e=this.entry(entryId);if(!e){this.ack(id,'Entry unavailable.');return;}
-      this.ack(id);this.show(cid,entryId);return;
-    }
     const m=action.match(/^nav:(\d+)$/);
     if(!m){this.ack(id,'This action is no longer available.');return;}
     const entryId=Number(m[1]),e=this.entry(entryId);if(!e){this.ack(id,'Entry unavailable.');return;}
@@ -288,7 +274,7 @@ export class Contest {
 
 async function telegram(env,method,payload) {
   let response;
-  try { response=await fetch(`https://api.telegram.org/bot${env.JOBBY_BOT_TOKEN}/${method}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }
+  try { response=await fetch(`https://api.telegram.org/bot${env.JOBBY_BOT_TOKEN}/${method}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(10000)}); }
   catch { throw new Error('Telegram transport unavailable'); }
   let data;try {data=await response.json();}catch {throw new Error('Invalid Telegram response');}
   if(!response.ok||!data.ok) {const e=new Error('Telegram request rejected');e.code=data.error_code;e.description=data.description;throw e;}
@@ -297,20 +283,9 @@ async function telegram(env,method,payload) {
 
 async function deliver(env,updateId) {
   const pending=await env.DB.prepare('SELECT * FROM webhook_outbox WHERE update_id=? AND delivered=0 ORDER BY id').bind(updateId).all();
-  for(const row of pending.results){
+  const outcomes=await Promise.allSettled(pending.results.map(async row=>{
     const payload=JSON.parse(row.payload);
-    try {
-      const delivered=await telegram(env,row.method,payload);
-      const caption=payload.caption||payload.media?.caption||'';
-      const entryMatch=String(caption).match(/JOBBY MEME ENTRY — #(\d+)/);
-      const source=row.method==='editMessageMedia'?payload.media?.media:
-        row.method==='sendPhoto'?payload.photo:row.method==='sendVideo'?payload.video:
-        row.method==='sendAnimation'?payload.animation:'';
-      const fileId=delivered?.photo?.at(-1)?.file_id||delivered?.video?.file_id||delivered?.animation?.file_id||'';
-      if(entryMatch&&fileId&&typeof source==='string'&&source.startsWith('https://'))
-        await env.DB.prepare('UPDATE entries SET photo_file_id=? WHERE id=? AND photo_file_id=?')
-          .bind(fileId,Number(entryMatch[1]),source).run();
-    }
+    try {await telegram(env,row.method,payload);}
     catch(e) {
       // Expired callback IDs and unchanged edits are harmless. Other failed
       // deliveries remain pending and cause Telegram to retry the webhook.
@@ -319,7 +294,9 @@ async function deliver(env,updateId) {
       else if(!(row.method==='answerCallbackQuery'&&e.code===400)&&!(row.method.startsWith('editMessage')&&e.code===400&&/message is not modified/i.test(e.description||'')))throw e;
     }
     await env.DB.prepare('UPDATE webhook_outbox SET delivered=1 WHERE id=?').bind(row.id).run();
-  }
+  }));
+  const failed=outcomes.find(result=>result.status==='rejected');
+  if(failed)throw failed.reason;
   await env.DB.prepare('UPDATE webhook_updates SET completed=1 WHERE update_id=?').bind(updateId).run();
 }
 
