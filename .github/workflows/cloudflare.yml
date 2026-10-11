@@ -1,5 +1,10 @@
 name: Deploy JOBBY to Cloudflare
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'cloudflare/**'
+      - '.github/workflows/cloudflare.yml'
   workflow_dispatch:
     inputs:
       run_x_media_smoke:
