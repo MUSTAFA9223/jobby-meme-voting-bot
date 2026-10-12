@@ -103,8 +103,9 @@ export class Contest {
   }
   about(chat) { this.send(chat,'<b>JOBBY Meme Gallery</b>\n• Browse every official entry.\n• Open the original X post and creator profiles from each card.\n• Entries can only be added, changed, or published by the organizer.'); }
   caption(e) {
-    const telegram=e.telegram_username?`\n💬 Telegram: <b>@${esc(e.telegram_username)}</b>`:'';
-    return `🖼 <b>JOBBY MEME ENTRY — #${String(e.id).padStart(3,'0')}</b>\n\n🐦 X creator: <b>@${esc(e.x_username)}</b>${telegram}\n🔗 Original post: <a href="${esc(e.tweet_url)}">View on X</a>`;
+    const name=e.creator_name?`\\n👤 Name: <b>${esc(e.creator_name)}</b>`:'';
+    const telegram=e.telegram_username?`\\n💬 Telegram: <b>@${esc(e.telegram_username)}</b>`:'';
+    return `🖼 <b>JOBBY MEME ENTRY — #${String(e.id).padStart(3,'0')}</b>${name}\\n\\n🐦 X creator: <b>@${esc(e.x_username)}</b>${telegram}\\n🔗 Original post: <a href="${esc(e.tweet_url)}">View on X</a>`;
   }
   publicCaption(e) { return this.caption(e); }
   entryKeyboard(e) {
@@ -152,7 +153,7 @@ export class Contest {
   }
   preview(chat) {
     const d=this.state.draft?.data;if(this.state.draft?.step!=='confirm'){this.send(chat,'No complete draft. Use /add.');return;}
-    this.media(chat,d.media_type||'photo',d.photo_file_id,`<b>Review before publishing</b>\nX post: ${esc(d.tweet_url)}\nX creator: @${esc(d.x_username)}\nTelegram: @${esc(d.telegram_username)}`,keyboard([button('✅ Publish entry','admin:confirm'),button('❌ Cancel','admin:cancel')]));
+    this.media(chat,d.media_type||'photo',d.photo_file_id,`<b>Review before publishing</b>\\nName: ${esc(d.creator_name||'Not available')}\\nX post: ${esc(d.tweet_url)}\\nX creator: @${esc(d.x_username)}\\nTelegram: @${esc(d.telegram_username||'Not available')}`,keyboard([button('✅ Publish entry','admin:confirm'),button('❌ Cancel','admin:cancel')]));
   }
   importForwarded(chat,message) {
     const forwarded=message.forward_origin||message.forward_from||message.forward_from_chat||message.is_automatic_forward;
