@@ -93,6 +93,8 @@ def main():
     entry_columns = cf(endpoint, {'sql': 'PRAGMA table_info(entries)'})[0]['results']
     if not any(column['name'] == 'media_type' for column in entry_columns):
         cf(endpoint, {'sql': "ALTER TABLE entries ADD COLUMN media_type TEXT NOT NULL DEFAULT 'photo' CHECK(media_type IN ('photo','video','animation'))"})
+    if not any(column['name'] == 'creator_name' for column in entry_columns):
+        cf(endpoint, {'sql': "ALTER TABLE entries ADD COLUMN creator_name TEXT NOT NULL DEFAULT ''"})
     vote_columns = cf(endpoint, {'sql': 'PRAGMA table_info(votes)'})[0]['results']
     vote_primary_key = [column['name'] for column in sorted(
         (column for column in vote_columns if column['pk']), key=lambda column: column['pk'])]
