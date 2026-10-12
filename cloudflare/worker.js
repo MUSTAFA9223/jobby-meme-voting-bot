@@ -43,6 +43,13 @@ function forwardedTelegramUsername(message) {
   if(origin?.type==='chat'||origin?.type==='channel')return origin.sender_chat?.username||origin.chat?.username||'';
   return message.forward_from?.username||message.forward_from_chat?.username||'';
 }
+function forwardedDisplayName(message) {
+  const origin=message.forward_origin;
+  const user=origin?.type==='user'?origin.sender_user:message.forward_from;
+  const chat=origin?.type==='chat'||origin?.type==='channel'?(origin.sender_chat||origin.chat):message.forward_from_chat;
+  const name=[user?.first_name,user?.last_name].filter(Boolean).join(' ').trim();
+  return (name||chat?.title||'').slice(0,120);
+}
 
 // All mutations and outgoing responses are committed with the update ID in one
 // D1 transaction. A Telegram retry only replays undelivered responses.
@@ -152,8 +159,9 @@ export class Contest {
     if(!forwarded)return false;
     const photo=message.photo?.at(-1),video=message.video,animation=message.animation;
     const media=photo?{media_type:'photo',photo_file_id:photo.file_id}:video?{media_type:'video',photo_file_id:video.file_id}:animation?{media_type:'animation',photo_file_id:animation.file_id}:null;
-    const tweet_url=tweetFromMessage(message),telegram_username=forwardedTelegramUsername(message);
+    const tweet_url=tweetFromMessage(message),telegram_username=forwardedTelegramUsername(message),creator_name=forwardedDisplayName(message);
     const data={...(media||{}),forwarded_import:true};
+    if(creator_name)data.creator_name=creator_name;
     if(tweet_url){data.tweet_url=tweet_url;data.x_username=xHandleFromTweet(tweet_url);}
     if(telegram_username)try{data.telegram_username=normalizeHandle(telegram_username,true);}catch{}
     if(!media){
@@ -254,7 +262,7 @@ export class Contest {
       else if(action==='admin:confirm'){
         if(this.state.draft?.step!=='confirm'){this.ack(id,'Draft already handled or expired.');return;}
         const d=this.state.draft.data,n=Math.max(0,...this.state.entries.map(e=>e.id))+1;
-        this.write('INSERT INTO entries(id,photo_file_id,media_type,tweet_url,x_username,telegram_username,created_by,created_at) VALUES(?,?,?,?,?,?,?,?)',n,d.photo_file_id,d.media_type||'photo',d.tweet_url,d.x_username,d.telegram_username,this.userId,now());
+        this.write('INSERT INTO entries(id,photo_file_id,media_type,tweet_url,x_username,telegram_username,creator_name,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)',n,d.photo_file_id,d.media_type||'photo',d.tweet_url,d.x_username,d.telegram_username,d.creator_name||'',this.userId,now());
         this.state.entries.push({...d,media_type:d.media_type||'photo',id:n,created_by:this.userId,active:1});this.clearDraft();
         this.ack(id,`Entry #${n} published`);this.send(cid,`✅ Entry #${n} saved.`,keyboard([button('📣 Publish to group/channel',`admin:publish:${n}`),button('🔗 Get private entry link',`admin:share:${n}`)]));this.show(cid,n);
       } else this.ack(id,'Unknown action.');return;
