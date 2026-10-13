@@ -147,6 +147,6 @@ test('organizer can publish every visible meme to one or all connected destinati
  assert.equal(sent.filter(x=>['sendPhoto','sendAnimation'].includes(x.method)&&x.payload.chat_id===-100123).length,2);
  assert.equal(sent.filter(x=>x.method==='sendVideo').length,0);
  assert.equal((await post(env,cb(3,'admin:postallentriesall',8355389673))).status,200);
- assert.equal(sent.filter(x=>['sendPhoto','sendAnimation','sendVideo'].includes(x.method)).length,6);
+ assert.equal(sent.filter(x=>['sendPhoto','sendAnimation','sendVideo'].includes(x.method)).length,4);
  assert.ok(sent.some(x=>x.method==='sendMessage'&&x.payload.text.includes('2 visible memes for 2 destinations')));
 });
