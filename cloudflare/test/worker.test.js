@@ -37,7 +37,8 @@ test('admin can forward a community meme and the bot prepares every detected fie
  assert.equal(draft.step,'confirm');
  assert.deepEqual(JSON.parse(draft.data),{media_type:'photo',photo_file_id:'community-meme',forwarded_import:true,tweet_url:'https://x.com/MemeArtist/status/98765',x_username:'MemeArtist',telegram_username:'memeartisttg'});
  assert.ok(sent.some(x=>x.payload.text?.includes('Telegram username is optional')));
- assert.ok(sent.some(x=>x.method==='sendPhoto'&&x.payload.caption?.includes('@memeartisttg')));
+ assert.ok(sent.some(x=>x.method==='sendPhoto'&&x.payload.caption?.includes('Meme preview')&&!x.payload.reply_markup));
+ assert.ok(sent.some(x=>x.method==='sendMessage'&&x.payload.text?.includes('@memeartisttg')&&x.payload.reply_markup?.inline_keyboard?.flat().some(b=>b.callback_data==='admin:confirm')));
  assert.equal((await post(env,cb(2,'admin:confirm',8355389673))).status,200);
  assert.deepEqual({...db.prepare('SELECT photo_file_id,tweet_url,x_username,telegram_username FROM entries').get()},{photo_file_id:'community-meme',tweet_url:'https://x.com/MemeArtist/status/98765',x_username:'MemeArtist',telegram_username:'memeartisttg'});
 });
