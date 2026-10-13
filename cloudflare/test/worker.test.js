@@ -158,7 +158,7 @@ test('admin entry manager paginates all entries including hidden entries',async(
  const firstButtons=first.payload.reply_markup.inline_keyboard.flat();
  assert.equal(firstButtons.filter(x=>/^admin:entry:\d+$/.test(x.callback_data)).length,20);
  assert.ok(firstButtons.some(x=>x.callback_data==='admin:entries:20'));
- assert.ok(firstButtons.some(x=>x.text.includes('#2 Hidden')));
+ assert.ok(firstButtons.some(x=>x.callback_data==='admin:entry:2'),'hidden entry should remain manageable');
  await post(env,cb(3,'admin:entries:20',8355389673));
  const second=sent.filter(x=>x.method==='sendMessage'&&x.payload.text?.includes('Showing 21–25 of 25')).at(-1);
  assert.ok(second,'second page should expose the remaining five entries');
