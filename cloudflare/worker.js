@@ -137,9 +137,35 @@ export class Contest {
   }
   startDraft(chat) { this.draft('media',{}); this.send(chat,'➕ <b>Add JOBBY meme</b>\nStep 1/4: Send the meme as a photo, video, or GIF.\n/cancel to stop.'); }
   welcome(chat) {
-    const rows=[[button('🖼 Browse entries','menu:entries')],[button('ℹ️ About the gallery','menu:about')]];
-    if(this.isAdmin()) rows.push([button('➕ Add meme (admin)','admin:add')],[button('Publish all memes','admin:publishall')],[button('Find duplicate participants','admin:duplicates')]);
-    this.send(chat,'🖼 <b>JOBBY Meme Gallery</b>\n\nBrowse official entries and open each creator’s original X post.\nOnly the organizer can add or publish entries.',{inline_keyboard:rows});
+    const rows=[[button('Browse meme gallery','menu:entries')],[button('About the gallery','menu:about')]];
+    if(this.isAdmin()) rows.push([button('ADMIN PANEL','admin:menu')]);
+    this.send(chat,'<b>JOBBY Meme Gallery</b>\\nBrowse memes and open their original X posts.',{inline_keyboard:rows});
+  }
+  adminMenu(chat) {
+    this.send(chat,'<b>JOBBY — Admin Panel</b>\\nChoose a tool below. These controls are only available to the organizer.',{inline_keyboard:[
+      [button('Add a meme','admin:add')],
+      [button('Publish memes (batches of 10)','admin:publishall')],
+      [button('Manage entries','admin:entries')],
+      [button('Connected channels and groups','admin:destinations')],
+      [button('Statistics','admin:stats'),button('Find duplicate accounts','admin:duplicates')]
+    ]});
+  }
+  adminEntries(chat) {
+    const entries=this.state.entries.slice().sort((a,b)=>b.id-a.id).slice(0,30);
+    if(!entries.length){this.send(chat,'<b>Manage entries</b>\\nNo entries yet.',{inline_keyboard:[[button('Back to Admin Panel','admin:menu')]]});return;}
+    const rows=[];
+    for(const e of entries) rows.push([button('#'+e.id+' '+(e.active?'Visible':'Hidden')+' — @'+String(e.x_username||'').slice(0,15),`admin:entry:${e.id}`)]);
+    rows.push([button('Back to Admin Panel','admin:menu')]);
+    this.send(chat,'<b>Manage entries</b>\\nChoose an entry to hide, restore, publish, or get its link.',{inline_keyboard:rows});
+  }
+  adminEntryActions(chat,id) {
+    const e=this.state.entries.find(x=>x.id===id);
+    if(!e){this.send(chat,'Entry not found.',{inline_keyboard:[[button('Back to entries','admin:entries')]]});return;}
+    this.send(chat,`<b>Entry #${e.id}</b>\\nX account: @${esc(e.x_username||'not set')}\\nStatus: ${e.active?'Visible':'Hidden'}`,{inline_keyboard:[
+      [button(e.active?'Hide entry':'Restore entry',e.active?`admin:hide:${id}`:`admin:restore:${id}`)],
+      [button('Publish this entry',`admin:publish:${id}`),button('Get entry link',`admin:share:${id}`)],
+      [button('Back to entries','admin:entries'),button('Admin Panel','admin:menu')]
+    ]});
   }
   about(chat) { this.send(chat,'<b>JOBBY Meme Gallery</b>\n• Browse every official entry.\n• Open the original X post and creator profiles from each card.\n• Entries can only be added, changed, or published by the organizer.'); }
   caption(e) {
@@ -289,7 +315,7 @@ export class Contest {
     if(['/entries','/memes'].includes(cmd)){this.browse(chat);return;}
     if(['/about','/rules'].includes(cmd)){this.about(chat);return;}
     if(!this.isAdmin()){this.send(chat,'Organizer-only command. Try /start.');return;}
-    if(['/admin','/help'].includes(cmd)) this.send(chat,'<b>JOBBY Gallery Admin</b>\\nForward a participant meme here to import its media, X link, and usernames automatically\\n/add — Add photo, video, or GIF meme\\n/cancel — Cancel draft\\n/list — Entries\\n/publish 12 — Publish one entry\\n/publish all — Publish visible memes in batches of 10\\n/destinations — Connected groups/channels\\n/register — Run inside a group to connect it\\nForward a channel post here to connect that channel\\n/remove 12 — Hide\\n/restore 12 — Restore\\n/stats — Entry counters\\n/share 12 — Private entry link\\n/duplicates — Find X or Telegram accounts with multiple memes');
+    if(['/admin','/help'].includes(cmd)) this.adminMenu(chat);
     else if(cmd==='/add') this.startDraft(chat);
     else if(cmd==='/cancel'){this.clearDraft();this.send(chat,'Draft canceled. Nothing published.');}
     else if(cmd==='/destinations')this.destinationList(chat);
@@ -314,7 +340,13 @@ export class Contest {
     if(action==='menu:about'){this.ack(id);this.about(cid);return;}
     if(action.startsWith('admin:')){
       if(!this.isAdmin()){this.ack(id,'Organizer only.');return;}
-      if(action==='admin:add'){this.ack(id);this.startDraft(cid);} else if(action==='admin:publishall'){this.ack(id);this.publishAllMenu(cid);} else if(action==='admin:duplicates'){this.ack(id,'Checking duplicate accounts…');this.duplicateReport(cid);}
+      if(action==='admin:menu'){this.ack(id);this.adminMenu(cid);}
+      else if(action==='admin:entries'){this.ack(id);this.adminEntries(cid);}
+      else if(action==='admin:destinations'){this.ack(id);this.destinationList(cid);}
+      else if(action==='admin:stats'){const active=this.standings();this.ack(id);this.send(cid,`<b>Gallery Statistics</b>\\nVisible entries: ${active.length}\\nHidden entries: ${this.state.entries.length-active.length}`,{inline_keyboard:[[button('Back to Admin Panel','admin:menu')]]});}
+      else if(/^admin:entry:\d+$/.test(action)){this.ack(id);this.adminEntryActions(cid,Number(action.split(':')[2]));}
+      else if(/^admin:(hide|restore):\d+$/.test(action)){const [,verb,raw]=action.split(':'),entryId=Number(raw),e=this.state.entries.find(x=>x.id===entryId);if(!e){this.ack(id,'Entry not found.');return;}e.active=verb==='restore'?1:0;this.write('UPDATE entries SET active=? WHERE id=?',e.active,entryId);this.ack(id,verb==='restore'?'Entry restored':'Entry hidden');this.adminEntryActions(cid,entryId);}
+      else if(action==='admin:add'){this.ack(id);this.startDraft(cid);} else if(action==='admin:publishall'){this.ack(id);this.publishAllMenu(cid);} else if(action==='admin:duplicates'){this.ack(id,'Checking duplicate accounts…');this.duplicateReport(cid);}
       else if(action==='admin:publishdestall'){this.ack(id);this.publishBatchMenu(cid,null);}
       else if(/^admin:publishdest:-?\d+$/.test(action)){const destinationId=Number(action.split(':')[2]);this.ack(id);this.publishBatchMenu(cid,destinationId);}
       else if(action==='admin:cancel'){this.clearDraft();this.ack(id,'Draft canceled');this.send(cid,'Draft canceled; nothing published.');}
