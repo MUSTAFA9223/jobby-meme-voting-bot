@@ -108,13 +108,16 @@ export async function enrichForwardedXMedia(update, env, fetcher = fetch) {
   const forwarded = message?.forward_origin || message?.forward_from ||
     message?.forward_from_chat || message?.is_automatic_forward;
   if (!message || message.chat?.type !== 'private' || !admins.has(message.from?.id) ||
-      !forwarded || message.photo || message.video || message.animation) return update;
+      message.photo || message.video || message.animation) return update;
   const source = `${message.text || ''}\n${message.caption || ''}`;
   const match = source.match(X_POST);
-  if (!match) return update;
+  // Admins can paste an X URL directly or forward a post. The synthetic origin
+  // routes direct links through the existing import flow without a Telegram username.
+  if (!match || (!forwarded && !message.text)) return update;
   try {
     const media = await fetchXMedia({user: match[1], id: match[2]}, fetcher);
     const enriched = structuredClone(update);
+    if (!forwarded) enriched.message.forward_origin = {type: 'user', sender_user: {id: 0}};
     if (media.type === 'photo') enriched.message.photo = [{file_id: media.url}];
     else enriched.message[media.type] = {file_id: media.url};
     return enriched;

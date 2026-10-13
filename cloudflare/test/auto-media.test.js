@@ -79,7 +79,7 @@ test('non-admin and ordinary messages never call the external service', async ()
   const fetcher = async () => { calls += 1; return Response.json({}); };
   const nonAdmin = forwarded(44);
   assert.equal(await enrichForwardedXMedia(nonAdmin, {JOBBY_ADMIN_IDS: '8355389673'}, fetcher), nonAdmin);
-  const ordinary = forwarded(); delete ordinary.message.forward_origin;
+  const ordinary = forwarded(); delete ordinary.message.forward_origin; ordinary.message.text = 'Hello there';
   assert.equal(await enrichForwardedXMedia(ordinary, {JOBBY_ADMIN_IDS: '8355389673'}, fetcher), ordinary);
   assert.equal(calls, 0);
 });
