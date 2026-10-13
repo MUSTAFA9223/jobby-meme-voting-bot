@@ -177,6 +177,6 @@ test('batch publishing stops at the first rejected meme and leaves it plus later
  assert.deepEqual(published,['photo-file-11']);
  assert.equal(published.includes('photo-file-12'),false,'entry 12 must not be attempted after entry 11 fails');
  assert.equal(db.prepare('SELECT completed FROM webhook_updates WHERE update_id=77').get().completed,0);
- assert.equal(db.prepare('SELECT COUNT(*) n FROM webhook_outbox WHERE update_id=77 AND delivered=0').get().n,10);
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM webhook_outbox WHERE update_id=77 AND delivered=0').get().n,11,'failed entry, remaining entries, and final batch summary stay pending');
  assert.equal(db.prepare('SELECT COUNT(*) n FROM webhook_outbox WHERE update_id=77 AND delivered=1').get().n,1,'only the callback acknowledgement before the failed post should be delivered');
 });
