@@ -39,6 +39,7 @@ An admin-curated Telegram gallery for JOBBY meme entries. The organizer adds eac
 | `/restore 12` | Restore entry #12 |
 | `/share 12` | Get a private deep link for entry #12 |
 | `/publish 12` | Publish entry #12 to registered destinations |
+| `/publish all` | Choose a connected destination and publish every visible meme at once, or send them to all destinations |
 | `/destinations` | List registered destinations |
 | `/unregister <chat_id>` | Remove a destination |
 | `/stats` | Show visible and hidden entry counts |
