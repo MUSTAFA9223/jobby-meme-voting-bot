@@ -518,7 +518,8 @@ async function deliver(env,updateId) {
     try {
       const delivered=await telegram(env,row.method,payload);
       const caption=payload.caption||payload.media?.caption||'';
-      const entryMatch=String(caption).match(/JOBBY MEME ENTRY — #(\d+)/);
+      const stableEntryId=payload.reply_markup?.inline_keyboard?.flat()?.map(b=>b.callback_data||b.url||'').map(v=>String(v).match(/(?:open:|start=m)(\d+)/)?.[1]).find(Boolean);
+      const entryMatch=stableEntryId?String(stableEntryId).match(/\d+/):String(caption).match(/JOBBY MEME ENTRY — #(\d+)/);
       const source=row.method==='editMessageMedia'?payload.media?.media:
         row.method==='sendPhoto'?payload.photo:row.method==='sendVideo'?payload.video:
         row.method==='sendAnimation'?payload.animation:'';
