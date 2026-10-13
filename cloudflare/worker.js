@@ -236,7 +236,7 @@ export class Contest {
     else if(cmd==='/add') this.startDraft(chat);
     else if(cmd==='/cancel'){this.clearDraft();this.send(chat,'Draft canceled. Nothing published.');}
     else if(cmd==='/destinations')this.destinationList(chat);
-    else if(cmd==='/publish'){ if(parts.length!==2)this.send(chat,'Usage: /publish &lt;entry number&gt; or /publish all'); else if(parts[1].toLowerCase()==='all')this.publishAllMenu(chat); else if(!/^\\d+$/.test(parts[1]))this.send(chat,'Usage: /publish &lt;entry number&gt; or /publish all'); else this.publishMenu(chat,Number(parts[1])); }
+    else if(cmd==='/publish'){ if(parts.length!==2)this.send(chat,'Usage: /publish &lt;entry number&gt; or /publish all'); else if(parts[1].toLowerCase()==='all')this.publishAllMenu(chat); else if(!/^\d+$/.test(parts[1]))this.send(chat,'Usage: /publish &lt;entry number&gt; or /publish all'); else this.publishMenu(chat,Number(parts[1])); }
     else if(cmd==='/list') this.send(chat,'<b>Latest entries</b>\n'+(this.state.entries.slice().sort((a,b)=>b.id-a.id).slice(0,50).map(e=>`#${e.id} @${esc(e.x_username)} — ${e.active?'visible':'hidden'}`).join('\n')||'None'));
     else if(cmd==='/stats'){
       const active=this.standings();this.send(chat,`<b>Gallery stats</b>\nVisible entries: ${active.length}\nHidden entries: ${this.state.entries.length-active.length}`);
