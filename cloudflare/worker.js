@@ -289,15 +289,23 @@ export class Contest {
         const [, ,destinationRaw,offsetRaw]=action.split(':'),destinationId=Number(destinationRaw),offset=Number(offsetRaw);
         const destination=this.state.destinations.find(d=>d.chat_id===destinationId);
         if(!destination){this.ack(id,'Destination unavailable.');return;}
-        const count=this.publishAllEntries(destination,offset,10),first=offset+1,last=offset+count;
+        const count=this.standings().slice(offset,offset+10).length,first=offset+1,last=offset+count;
         if(!count){this.ack(id,'No visible memes in this batch.');return;}
-        this.ack(id,'Publishing batch…');this.send(cid,`Queued batch entries ${first}–${last} (${count} memes) for ${esc(destination.title)}.`);
+        // Answer the Telegram callback before enqueueing media, so the button
+        // responds immediately instead of timing out behind ten network sends.
+        this.ack(id,'Batch accepted. Publishing…');
+        this.publishAllEntries(destination,offset,10);
+        this.send(cid,`Queued batch entries ${first}–${last} (${count} memes) for ${esc(destination.title)}.`);
       }
       else if(/^admin:postbatchall:\d+$/.test(action)){
         const offset=Number(action.split(':')[2]),entries=this.standings().slice(offset,offset+10),destinations=this.state.destinations;
         if(!entries.length||!destinations.length){this.ack(id,'No visible memes or destinations in this batch.');return;}
-        let count=0;for(const destination of destinations)count+=this.publishAllEntries(destination,offset,10);
-        this.ack(id,'Publishing batch…');this.send(cid,`Queued batch entries ${offset+1}–${offset+entries.length}: ${entries.length} memes for ${destinations.length} destinations (${count} posts).`);
+        const count=entries.length*destinations.length;
+        // Acknowledge first; Telegram callback queries expire while media sends
+        // are pending if the acknowledgement is placed after the batch.
+        this.ack(id,'Batch accepted. Publishing…');
+        for(const destination of destinations)this.publishAllEntries(destination,offset,10);
+        this.send(cid,`Queued batch entries ${offset+1}–${offset+entries.length}: ${entries.length} memes for ${destinations.length} destinations (${count} posts).`);
       }
       else if(action==='admin:confirm'){
         if(this.state.draft?.step!=='confirm'){this.ack(id,'Draft already handled or expired.');return;}
