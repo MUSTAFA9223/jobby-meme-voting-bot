@@ -380,7 +380,16 @@ async function deliver(env,updateId) {
           .bind(fileId,Number(entryMatch[1]),source).run();
     }
     catch(e) {
-      if((row.method==='answerCallbackQuery'&&e.code===400)||
+      if(['sendPhoto','sendVideo','sendAnimation'].includes(row.method)&&e.code===400) {
+        // Do not silently skip a meme or let one invalid Telegram file_id block
+        // the entire batch. Publish this same entry's caption and original X link
+        // as a text fallback, then continue in order.
+        const caption=payload.caption||'';
+        const markup=payload.reply_markup;
+        await telegram(env,'sendMessage',{chat_id:payload.chat_id,
+          text:caption+'\\n\\nMedia could not be attached by Telegram; open the original X post to view this entry.',
+          parse_mode:'HTML',...(markup?{reply_markup:markup}:{})});
+      } else if((row.method==='answerCallbackQuery'&&e.code===400)||
         (row.method.startsWith('editMessage')&&e.code===400&&/message is not modified/i.test(e.description||''))) {
         // These responses are already obsolete or have already taken effect.
       } else {
