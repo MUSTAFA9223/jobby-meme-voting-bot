@@ -150,13 +150,21 @@ export class Contest {
     const entries=this.standings(),destinations=this.state.destinations;
     if(!entries.length){this.send(chat,'There are no visible meme entries to publish.');return;}
     if(!destinations.length){this.destinationList(chat);return;}
+    const rows=destinations.map(d=>[button(`📣 ${String(d.title).slice(0,40)}`,`admin:publishdest:${d.chat_id}`)]);
+    if(destinations.length>1)rows.push([button('📣 All connected destinations','admin:publishdestall')]);
+    this.send(chat,`<b>Step 1/2 — Choose destination</b>\\n\\n${entries.length} visible memes are ready. First choose the channel or group; then choose which batch of 10 to publish.`,{inline_keyboard:rows});
+  }
+  publishBatchMenu(chat,destinationId=null) {
+    const entries=this.standings(),destinations=destinationId===null?this.state.destinations:this.state.destinations.filter(d=>d.chat_id===destinationId);
+    if(!entries.length){this.send(chat,'There are no visible meme entries to publish.');return;}
+    if(!destinations.length){this.send(chat,'Destination unavailable. Run /publish all and choose again.');return;}
     const rows=[];
     for(let offset=0;offset<entries.length;offset+=10){
       const first=offset+1,last=Math.min(offset+10,entries.length),batch=Math.floor(offset/10)+1;
-      for(const destination of destinations)rows.push([button(`📣 ${first}–${last} → ${String(destination.title).slice(0,24)}`,`admin:postbatch:${destination.chat_id}:${offset}`)]);
-      rows.push([button(`📣 Batch ${batch}: ${first}–${last} → ALL destinations`,`admin:postbatchall:${offset}`)]);
+      rows.push([button(`Publish ${first}–${last}${last-first+1<10?' ('+(last-first+1)+')':''}`,destinationId===null?`admin:postbatchall:${offset}`:`admin:postbatch:${destinationId}:${offset}`)]);
     }
-    this.send(chat,`<b>Publish memes in batches of 10</b>\n\n${entries.length} visible memes, in entry order. Each button publishes only that batch (up to 10 memes) to the chosen destination. The ALL destinations option sends that batch to every connected destination. Existing posts will not be removed, so do not select the same batch twice.`,{inline_keyboard:rows});
+    const target=destinationId===null?'all connected destinations':destinations[0].title;
+    this.send(chat,`<b>Step 2/2 — Choose batch</b>\\nDestination: <b>${esc(target)}</b>\\n${entries.length} visible memes. Each button publishes up to 10 entries in order. Avoid pressing the same batch twice.`,{inline_keyboard:rows});
   }
   publishAllEntries(destination,offset=0,limit=10) {
     const entries=this.standings().slice(offset,offset+limit);
@@ -261,6 +269,8 @@ export class Contest {
     if(action.startsWith('admin:')){
       if(!this.isAdmin()){this.ack(id,'Organizer only.');return;}
       if(action==='admin:add'){this.ack(id);this.startDraft(cid);} else if(action==='admin:publishall'){this.ack(id);this.publishAllMenu(cid);}
+      else if(action==='admin:publishdestall'){this.ack(id);this.publishBatchMenu(cid,null);}
+      else if(/^admin:publishdest:-?\\d+$/.test(action)){const destinationId=Number(action.split(':')[2]);this.ack(id);this.publishBatchMenu(cid,destinationId);}
       else if(action==='admin:cancel'){this.clearDraft();this.ack(id,'Draft canceled');this.send(cid,'Draft canceled; nothing published.');}
       else if(/^admin:publish:\d+$/.test(action)){const entryId=Number(action.split(':')[2]);this.ack(id);this.publishMenu(cid,entryId);}
       else if(/^admin:share:\d+$/.test(action)){const entryId=Number(action.split(':')[2]);this.ack(id);this.send(cid,`Share: https://t.me/${esc(this.env.JOBBY_BOT_USERNAME)}?start=m${entryId}`);}
