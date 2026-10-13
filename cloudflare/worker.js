@@ -83,6 +83,29 @@ export class Contest {
   entry(id,active=true) { return this.state.entries.find(e=>e.id===id && (!active||e.active===1)); }
   standings() { return this.state.entries.filter(e=>e.active===1).sort((a,b)=>a.id-b.id); }
   ids() { return this.state.entries.filter(e=>e.active===1).map(e=>e.id).sort((a,b)=>a-b); }
+  duplicateReport(chat) {
+    const entries=this.state.entries.slice().sort((a,b)=>a.id-b.id);
+    const groups=new Map();
+    for(const e of entries) {
+      for(const [kind,raw] of [['X',e.x_username],['Telegram',e.telegram_username]]) {
+        const handle=String(raw||'').trim().replace(/^@/,'').toLowerCase();
+        if(!handle) continue;
+        const key=kind+':'+handle;
+        if(!groups.has(key)) groups.set(key,{kind,handle,entries:[]});
+        groups.get(key).entries.push(e);
+      }
+    }
+    const duplicates=[...groups.values()].filter(g=>g.entries.length>1).sort((a,b)=>b.entries.length-a.entries.length||a.kind.localeCompare(b.kind)||a.handle.localeCompare(b.handle));
+    if(!duplicates.length){this.send(chat,'<b>Duplicate participant check</b>\\nNo X or Telegram account appears on more than one entry.');return;}
+    const lines=duplicates.map(g=>{
+      const nums=g.entries.map(e=>'#'+String(e.id).padStart(3,'0')+(e.active===1?'':' (hidden)')).join(', ');
+      const x=[...new Set(g.entries.map(e=>String(e.x_username||'').trim().replace(/^@/,'')).filter(Boolean))];
+      const tg=[...new Set(g.entries.map(e=>String(e.telegram_username||'').trim().replace(/^@/,'')).filter(Boolean))];
+      return '<b>'+g.kind+' duplicate: @'+esc(g.handle)+'</b> — '+g.entries.length+' memes\\nEntries: '+nums+'\\nX: '+(x.length?'@'+x.map(esc).join(', @'):'not provided')+'\\nTelegram: '+(tg.length?'@'+tg.map(esc).join(', @'):'not provided');
+    });
+    const text='<b>Duplicate participant report</b>\\nAccounts listed below appear on multiple entries. Hidden entries are marked.\\n\\n'+lines.join('\\n\\n');
+    for(let i=0;i<text.length;i+=3800)this.send(chat,text.slice(i,i+3800));
+  }
   draft(step,data) {
     this.state.draft={step,data};
     this.write('INSERT INTO drafts(admin_id,step,data,updated_at) VALUES(?,?,?,?) ON CONFLICT(admin_id) DO UPDATE SET step=excluded.step,data=excluded.data,updated_at=excluded.updated_at',this.userId,step,JSON.stringify(data),now());
@@ -98,7 +121,7 @@ export class Contest {
   startDraft(chat) { this.draft('media',{}); this.send(chat,'➕ <b>Add JOBBY meme</b>\nStep 1/4: Send the meme as a photo, video, or GIF.\n/cancel to stop.'); }
   welcome(chat) {
     const rows=[[button('🖼 Browse entries','menu:entries')],[button('ℹ️ About the gallery','menu:about')]];
-    if(this.isAdmin()) rows.push([button('➕ Add meme (admin)','admin:add')],[button('Publish all memes','admin:publishall')]);
+    if(this.isAdmin()) rows.push([button('➕ Add meme (admin)','admin:add')],[button('Publish all memes','admin:publishall')],[button('Find duplicate participants','admin:duplicates')]);
     this.send(chat,'🖼 <b>JOBBY Meme Gallery</b>\n\nBrowse official entries and open each creator’s original X post.\nOnly the organizer can add or publish entries.',{inline_keyboard:rows});
   }
   about(chat) { this.send(chat,'<b>JOBBY Meme Gallery</b>\n• Browse every official entry.\n• Open the original X post and creator profiles from each card.\n• Entries can only be added, changed, or published by the organizer.'); }
@@ -244,10 +267,11 @@ export class Contest {
     if(['/entries','/memes'].includes(cmd)){this.browse(chat);return;}
     if(['/about','/rules'].includes(cmd)){this.about(chat);return;}
     if(!this.isAdmin()){this.send(chat,'Organizer-only command. Try /start.');return;}
-    if(['/admin','/help'].includes(cmd)) this.send(chat,'<b>JOBBY Gallery Admin</b>\\nForward a participant meme here to import its media, X link, and usernames automatically\\n/add — Add photo, video, or GIF meme\\n/cancel — Cancel draft\\n/list — Entries\\n/publish 12 — Publish one entry\\n/publish all — Publish visible memes in batches of 10\\n/destinations — Connected groups/channels\\n/register — Run inside a group to connect it\\nForward a channel post here to connect that channel\\n/remove 12 — Hide\\n/restore 12 — Restore\\n/stats — Entry counters\\n/share 12 — Private entry link');
+    if(['/admin','/help'].includes(cmd)) this.send(chat,'<b>JOBBY Gallery Admin</b>\\nForward a participant meme here to import its media, X link, and usernames automatically\\n/add — Add photo, video, or GIF meme\\n/cancel — Cancel draft\\n/list — Entries\\n/publish 12 — Publish one entry\\n/publish all — Publish visible memes in batches of 10\\n/destinations — Connected groups/channels\\n/register — Run inside a group to connect it\\nForward a channel post here to connect that channel\\n/remove 12 — Hide\\n/restore 12 — Restore\\n/stats — Entry counters\\n/share 12 — Private entry link\\n/duplicates — Find X or Telegram accounts with multiple memes');
     else if(cmd==='/add') this.startDraft(chat);
     else if(cmd==='/cancel'){this.clearDraft();this.send(chat,'Draft canceled. Nothing published.');}
     else if(cmd==='/destinations')this.destinationList(chat);
+    else if(cmd==='/duplicates'||cmd==='/dupes')this.duplicateReport(chat);
     else if(cmd==='/publish'){ if(parts.length!==2)this.send(chat,'Usage: /publish &lt;entry number&gt; or /publish all'); else if(parts[1].toLowerCase()==='all')this.publishAllMenu(chat); else if(!/^\d+$/.test(parts[1]))this.send(chat,'Usage: /publish &lt;entry number&gt; or /publish all'); else this.publishMenu(chat,Number(parts[1])); }
     else if(cmd==='/list') this.send(chat,'<b>Latest entries</b>\n'+(this.state.entries.slice().sort((a,b)=>b.id-a.id).slice(0,50).map(e=>`#${e.id} @${esc(e.x_username)} — ${e.active?'visible':'hidden'}`).join('\n')||'None'));
     else if(cmd==='/stats'){
@@ -268,7 +292,7 @@ export class Contest {
     if(action==='menu:about'){this.ack(id);this.about(cid);return;}
     if(action.startsWith('admin:')){
       if(!this.isAdmin()){this.ack(id,'Organizer only.');return;}
-      if(action==='admin:add'){this.ack(id);this.startDraft(cid);} else if(action==='admin:publishall'){this.ack(id);this.publishAllMenu(cid);}
+      if(action==='admin:add'){this.ack(id);this.startDraft(cid);} else if(action==='admin:publishall'){this.ack(id);this.publishAllMenu(cid);} else if(action==='admin:duplicates'){this.ack(id,'Checking duplicate accounts…');this.duplicateReport(cid);}
       else if(action==='admin:publishdestall'){this.ack(id);this.publishBatchMenu(cid,null);}
       else if(/^admin:publishdest:-?\d+$/.test(action)){const destinationId=Number(action.split(':')[2]);this.ack(id);this.publishBatchMenu(cid,destinationId);}
       else if(action==='admin:cancel'){this.clearDraft();this.ack(id,'Draft canceled');this.send(cid,'Draft canceled; nothing published.');}
