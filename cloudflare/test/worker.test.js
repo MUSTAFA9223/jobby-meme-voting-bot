@@ -133,22 +133,32 @@ test('URLs and handles reject hostile inputs and normalize official URLs',()=>{
 });
 
 
-test('organizer can publish visible memes in batches of ten to one or all connected destinations',async()=>{
+test('organizer chooses destination first, then publishes visible memes in batches of ten',async()=>{
  const {env,db}=fixture(),sent=[];
  globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
  seed(db,1,'photo');seed(db,2,'video');seed(db,3,'animation');db.prepare('UPDATE entries SET active=0 WHERE id=2').run();
  for(const [id,title] of [[-100123,'JOBBY Community'],[-100456,'JOBBY Channel']])db.prepare('INSERT INTO destinations(chat_id,title,chat_type,active,registered_by,updated_at) VALUES(?,?,?,?,?,?)').run(id,title,id===-100456?'channel':'supergroup',1,8355389673,'today');
  assert.equal((await post(env,message(1,'/publish all'))).status,200);
- const menu=sent.find(x=>x.method==='sendMessage'&&x.payload.text.includes('batches of 10'));
+ const menu=sent.find(x=>x.method==='sendMessage'&&x.payload.text.includes('Step 1/2'));
  assert.ok(menu);
  const options=menu.payload.reply_markup.inline_keyboard.flat().map(x=>x.callback_data);
- assert.ok(options.includes('admin:postbatch:-100123:0'));
- assert.ok(options.includes('admin:postbatchall:0'));
- assert.ok(menu.payload.text.includes('batches of 10'));
- assert.equal((await post(env,cb(2,'admin:postbatch:-100123:0',8355389673))).status,200);
+ assert.ok(options.includes('admin:publishdest:-100123'));
+ assert.ok(options.includes('admin:publishdest:-100456'));
+ assert.ok(options.includes('admin:publishdestall'));
+ assert.equal(options.some(x=>x.startsWith('admin:postbatch:')),false);
+ assert.equal((await post(env,cb(2,'admin:publishdest:-100123',8355389673))).status,200);
+ const batches=sent.filter(x=>x.method==='sendMessage'&&x.payload.text.includes('Step 2/2')).at(-1);
+ assert.ok(batches);
+ const batchOptions=batches.payload.reply_markup.inline_keyboard.flat().map(x=>x.callback_data);
+ assert.deepEqual(batchOptions,['admin:postbatch:-100123:0']);
+ assert.equal((await post(env,cb(3,'admin:postbatch:-100123:0',8355389673))).status,200);
  assert.equal(sent.filter(x=>['sendPhoto','sendAnimation'].includes(x.method)&&x.payload.chat_id===-100123).length,2);
  assert.equal(sent.filter(x=>x.method==='sendVideo').length,0);
- assert.equal((await post(env,cb(3,'admin:postbatchall:0',8355389673))).status,200);
+ assert.equal((await post(env,cb(4,'admin:publishdestall',8355389673))).status,200);
+ const allBatches=sent.filter(x=>x.method==='sendMessage'&&x.payload.text.includes('Step 2/2')).at(-1);
+ assert.ok(allBatches.payload.text.includes('all connected destinations'));
+ assert.deepEqual(allBatches.payload.reply_markup.inline_keyboard.flat().map(x=>x.callback_data),['admin:postbatchall:0']);
+ assert.equal((await post(env,cb(5,'admin:postbatchall:0',8355389673))).status,200);
  assert.equal(sent.filter(x=>['sendPhoto','sendAnimation','sendVideo'].includes(x.method)).length,6);
  assert.ok(sent.some(x=>x.method==='sendMessage'&&x.payload.text.includes('2 memes for 2 destinations')));
 });
