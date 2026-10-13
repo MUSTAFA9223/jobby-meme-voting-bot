@@ -22,10 +22,10 @@ test('unauthenticated requests cannot write; malformed updates are rejected',asy
  const {env,db}=fixture();assert.equal((await post(env,message(1,'/pause'),'wrong')).status,403);assert.equal((await post(env,{update_id:'1'})).status,400);assert.equal(db.prepare('SELECT COUNT(*) n FROM webhook_updates').get().n,0);
 });
 test('full photo wizard survives requests and duplicate publishing creates one entry',async()=>{
- const {env,db}=fixture();const sent=[];globalThis.fetch=async(url,opts)=>{sent.push(JSON.parse(opts.body));return Response.json({ok:true,result:{}});};
+ const {env,db}=fixture();const sent=[];globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
  const inputs=[message(1,'/add'),{...message(2,''),message:{...message(2,'').message,photo:[{file_id:'small'},{file_id:'large'}]}},message(3,'https://twitter.com/creator/status/123?s=20'),message(4,'@creator'),message(5,'@creatorname'),cb(6,'admin:confirm',8355389673)];
  for(const u of inputs)assert.equal((await post(env,u)).status,200);
- assert.equal((await post(env,inputs[5])).status,200);assert.equal(db.prepare('SELECT COUNT(*) n FROM entries').get().n,1);assert.deepEqual({...db.prepare('SELECT photo_file_id,media_type FROM entries').get()},{photo_file_id:'large',media_type:'photo'});assert.equal(db.prepare('SELECT COUNT(*) n FROM drafts').get().n,0);assert.ok(sent.some(x=>x.caption?.includes('Review before publishing')));
+ assert.equal((await post(env,inputs[5])).status,200);assert.equal(db.prepare('SELECT COUNT(*) n FROM entries').get().n,1);assert.deepEqual({...db.prepare('SELECT photo_file_id,media_type FROM entries').get()},{photo_file_id:'large',media_type:'photo'});assert.equal(db.prepare('SELECT COUNT(*) n FROM drafts').get().n,0);assert.ok(sent.some(x=>x.method==='sendMessage'&&x.payload.text?.includes('Review before publishing')&&x.payload.reply_markup?.inline_keyboard?.flat().some(b=>b.callback_data==='admin:confirm')));
 });
 test('admin can forward a community meme and the bot prepares every detected field',async()=>{
  const {env,db}=fixture(),sent=[];globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
@@ -37,7 +37,8 @@ test('admin can forward a community meme and the bot prepares every detected fie
  assert.equal(draft.step,'confirm');
  assert.deepEqual(JSON.parse(draft.data),{media_type:'photo',photo_file_id:'community-meme',forwarded_import:true,tweet_url:'https://x.com/MemeArtist/status/98765',x_username:'MemeArtist',telegram_username:'memeartisttg'});
  assert.ok(sent.some(x=>x.payload.text?.includes('Telegram username is optional')));
- assert.ok(sent.some(x=>x.method==='sendPhoto'&&x.payload.caption?.includes('@memeartisttg')));
+ assert.ok(sent.some(x=>x.method==='sendPhoto'&&x.payload.caption?.includes('Meme preview')&&!x.payload.reply_markup));
+ assert.ok(sent.some(x=>x.method==='sendMessage'&&x.payload.text?.includes('@memeartisttg')&&x.payload.reply_markup?.inline_keyboard?.flat().some(b=>b.callback_data==='admin:confirm')));
  assert.equal((await post(env,cb(2,'admin:confirm',8355389673))).status,200);
  assert.deepEqual({...db.prepare('SELECT photo_file_id,tweet_url,x_username,telegram_username FROM entries').get()},{photo_file_id:'community-meme',tweet_url:'https://x.com/MemeArtist/status/98765',x_username:'MemeArtist',telegram_username:'memeartisttg'});
 });
@@ -78,7 +79,7 @@ test('video and GIF memes publish with the correct Telegram media methods',async
   const inputs=[message(1,'/add'),mediaMessage(2,type,`${type}-file`),message(3,'https://x.com/creator/status/123'),message(4,'@creator'),message(5,'@creatorname'),cb(6,'admin:confirm',8355389673)];
   for(const u of inputs)assert.equal((await post(env,u)).status,200);
   assert.deepEqual({...db.prepare('SELECT photo_file_id,media_type FROM entries').get()},{photo_file_id:`${type}-file`,media_type:type});
-  assert.ok(sent.some(x=>x.method===method&&x.payload.caption?.includes('Review before publishing')));
+  assert.ok(sent.some(x=>x.method===method&&x.payload.caption?.includes('Meme preview')&&!x.payload.reply_markup));assert.ok(sent.some(x=>x.method==='sendMessage'&&x.payload.text?.includes('Review before publishing')&&x.payload.reply_markup?.inline_keyboard?.flat().some(b=>b.callback_data==='admin:confirm')));
   assert.ok(sent.some(x=>x.method===method&&x.payload.caption?.includes('JOBBY MEME ENTRY')));
  }
 });
