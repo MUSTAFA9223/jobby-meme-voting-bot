@@ -156,14 +156,14 @@ test('admin entry manager paginates all entries including hidden entries',async(
  const first=sent.filter(x=>x.method==='sendMessage'&&x.payload.text?.includes('Showing 1–20 of 25')).at(-1);
  assert.ok(first,'first page should report all 25 entries');
  const firstButtons=first.payload.reply_markup.inline_keyboard.flat();
- assert.equal(firstButtons.filter(x=>/^admin:entry:\\d+$/.test(x.callback_data)).length,20);
+ assert.equal(firstButtons.filter(x=>/^admin:entry:\d+$/.test(x.callback_data)).length,20);
  assert.ok(firstButtons.some(x=>x.callback_data==='admin:entries:20'));
  assert.ok(firstButtons.some(x=>x.text.includes('#2 Hidden')));
  await post(env,cb(3,'admin:entries:20',8355389673));
  const second=sent.filter(x=>x.method==='sendMessage'&&x.payload.text?.includes('Showing 21–25 of 25')).at(-1);
  assert.ok(second,'second page should expose the remaining five entries');
  const secondButtons=second.payload.reply_markup.inline_keyboard.flat();
- assert.equal(secondButtons.filter(x=>/^admin:entry:\\d+$/.test(x.callback_data)).length,5);
+ assert.equal(secondButtons.filter(x=>/^admin:entry:\d+$/.test(x.callback_data)).length,5);
  assert.ok(secondButtons.some(x=>x.callback_data==='admin:entries:0'));
  assert.ok(secondButtons.some(x=>x.callback_data==='admin:entry:1'));
 });
