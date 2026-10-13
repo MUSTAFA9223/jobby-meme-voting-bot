@@ -130,3 +130,23 @@ test('independent Telegram responses are delivered in parallel',async()=>{
 test('URLs and handles reject hostile inputs and normalize official URLs',()=>{
  assert.equal(normalizeTweet('https://twitter.com/a/status/123?s=4'),'https://x.com/a/status/123');assert.throws(()=>normalizeTweet('https://x.com.evil.test/a/status/123'));assert.throws(()=>normalizeTweet('http://x.com/a/status/123'));assert.throws(()=>normalizeHandle('<script>',true));assert.equal(normalizeHandle('@creatorname',true),'creatorname');
 });
+
+
+test('organizer can publish every visible meme to one or all connected destinations',async()=>{
+ const {env,db}=fixture(),sent=[];
+ globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
+ seed(db,1,'photo');seed(db,2,'video');seed(db,3,'animation');db.prepare('UPDATE entries SET active=0 WHERE id=2').run();
+ for(const [id,title] of [[-100123,'JOBBY Community'],[-100456,'JOBBY Channel']])db.prepare('INSERT INTO destinations(chat_id,title,chat_type,active,registered_by,updated_at) VALUES(?,?,?,?,?,?)').run(id,title,id===-100456?'channel':'supergroup',1,8355389673,'today');
+ assert.equal((await post(env,message(1,'/publish all'))).status,200);
+ const menu=sent.find(x=>x.method==='sendMessage'&&x.payload.text.includes('Publish every visible meme'));
+ assert.ok(menu);
+ const options=menu.payload.reply_markup.inline_keyboard.flat().map(x=>x.callback_data);
+ assert.ok(options.includes('admin:postallentries:-100123'));
+ assert.ok(options.includes('admin:postallentriesall'));
+ assert.equal((await post(env,cb(2,'admin:postallentries:-100123',8355389673))).status,200);
+ assert.equal(sent.filter(x=>['sendPhoto','sendAnimation'].includes(x.method)&&x.payload.chat_id===-100123).length,2);
+ assert.equal(sent.filter(x=>x.method==='sendVideo').length,0);
+ assert.equal((await post(env,cb(3,'admin:postallentriesall',8355389673))).status,200);
+ assert.equal(sent.filter(x=>['sendPhoto','sendAnimation','sendVideo'].includes(x.method)).length,6);
+ assert.ok(sent.some(x=>x.method==='sendMessage'&&x.payload.text.includes('2 visible memes for 2 destinations')));
+});
