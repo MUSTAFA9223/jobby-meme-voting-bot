@@ -344,8 +344,8 @@ export class Contest {
       else if(action==='admin:entries'){this.ack(id);this.adminEntries(cid);}
       else if(action==='admin:destinations'){this.ack(id);this.destinationList(cid);}
       else if(action==='admin:stats'){const active=this.standings();this.ack(id);this.send(cid,`<b>Gallery Statistics</b>\\nVisible entries: ${active.length}\\nHidden entries: ${this.state.entries.length-active.length}`,{inline_keyboard:[[button('Back to Admin Panel','admin:menu')]]});}
-      else if(/^admin:entry:\\d+$/.test(action)){this.ack(id);this.adminEntryActions(cid,Number(action.split(':')[2]));}
-      else if(/^admin:(hide|restore):\\d+$/.test(action)){const [,verb,raw]=action.split(':'),entryId=Number(raw),e=this.state.entries.find(x=>x.id===entryId);if(!e){this.ack(id,'Entry not found.');return;}e.active=verb==='restore'?1:0;this.write('UPDATE entries SET active=? WHERE id=?',e.active,entryId);this.ack(id,verb==='restore'?'Entry restored':'Entry hidden');this.adminEntryActions(cid,entryId);}
+      else if(/^admin:entry:\d+$/.test(action)){this.ack(id);this.adminEntryActions(cid,Number(action.split(':')[2]));}
+      else if(/^admin:(hide|restore):\d+$/.test(action)){const [,verb,raw]=action.split(':'),entryId=Number(raw),e=this.state.entries.find(x=>x.id===entryId);if(!e){this.ack(id,'Entry not found.');return;}e.active=verb==='restore'?1:0;this.write('UPDATE entries SET active=? WHERE id=?',e.active,entryId);this.ack(id,verb==='restore'?'Entry restored':'Entry hidden');this.adminEntryActions(cid,entryId);}
       else if(action==='admin:add'){this.ack(id);this.startDraft(cid);} else if(action==='admin:publishall'){this.ack(id);this.publishAllMenu(cid);} else if(action==='admin:duplicates'){this.ack(id,'Checking duplicate accounts…');this.duplicateReport(cid);}
       else if(action==='admin:publishdestall'){this.ack(id);this.publishBatchMenu(cid,null);}
       else if(/^admin:publishdest:-?\d+$/.test(action)){const destinationId=Number(action.split(':')[2]);this.ack(id);this.publishBatchMenu(cid,destinationId);}
