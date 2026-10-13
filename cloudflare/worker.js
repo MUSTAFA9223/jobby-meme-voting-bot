@@ -150,12 +150,16 @@ export class Contest {
     const entries=this.standings(),destinations=this.state.destinations;
     if(!entries.length){this.send(chat,'There are no visible meme entries to publish.');return;}
     if(!destinations.length){this.destinationList(chat);return;}
-    const rows=destinations.map(d=>[button(`📣 All memes → ${String(d.title).slice(0,32)}`,`admin:postallentries:${d.chat_id}`)]);
-    rows.push([button('📣 All memes → ALL destinations','admin:postallentriesall')]);
-    this.send(chat,`<b>Publish every visible meme?</b>\n\n${entries.length} memes will be posted in order to the selected destination. Existing posts will not be removed. Choose carefully to avoid reposting entries.`,{inline_keyboard:rows});
+    const rows=[];
+    for(let offset=0;offset<entries.length;offset+=10){
+      const first=offset+1,last=Math.min(offset+10,entries.length),batch=Math.floor(offset/10)+1;
+      for(const destination of destinations)rows.push([button(`📣 ${first}–${last} → ${String(destination.title).slice(0,24)}`,`admin:postbatch:${destination.chat_id}:${offset}`)]);
+      rows.push([button(`📣 Batch ${batch}: ${first}–${last} → ALL destinations`,`admin:postbatchall:${offset}`)]);
+    }
+    this.send(chat,`<b>Publish memes in batches of 10</b>\n\n${entries.length} visible memes, in entry order. Each button publishes only that batch (up to 10 memes) to the chosen destination. The ALL destinations option sends that batch to every connected destination. Existing posts will not be removed, so do not select the same batch twice.`,{inline_keyboard:rows});
   }
-  publishAllEntries(destination) {
-    const entries=this.standings();
+  publishAllEntries(destination,offset=0,limit=10) {
+    const entries=this.standings().slice(offset,offset+limit);
     if(!destination)return 0;
     for(const entry of entries)this.publishEntry(entry.id,destination);
     return entries.length;
@@ -232,7 +236,7 @@ export class Contest {
     if(['/entries','/memes'].includes(cmd)){this.browse(chat);return;}
     if(['/about','/rules'].includes(cmd)){this.about(chat);return;}
     if(!this.isAdmin()){this.send(chat,'Organizer-only command. Try /start.');return;}
-    if(['/admin','/help'].includes(cmd)) this.send(chat,'<b>JOBBY Gallery Admin</b>\\nForward a participant meme here to import its media, X link, and usernames automatically\\n/add — Add photo, video, or GIF meme\\n/cancel — Cancel draft\\n/list — Entries\\n/publish 12 — Publish one entry\\n/publish all — Publish every visible meme at once\\n/destinations — Connected groups/channels\\n/register — Run inside a group to connect it\\nForward a channel post here to connect that channel\\n/remove 12 — Hide\\n/restore 12 — Restore\\n/stats — Entry counters\\n/share 12 — Private entry link');
+    if(['/admin','/help'].includes(cmd)) this.send(chat,'<b>JOBBY Gallery Admin</b>\\nForward a participant meme here to import its media, X link, and usernames automatically\\n/add — Add photo, video, or GIF meme\\n/cancel — Cancel draft\\n/list — Entries\\n/publish 12 — Publish one entry\\n/publish all — Publish visible memes in batches of 10\\n/destinations — Connected groups/channels\\n/register — Run inside a group to connect it\\nForward a channel post here to connect that channel\\n/remove 12 — Hide\\n/restore 12 — Restore\\n/stats — Entry counters\\n/share 12 — Private entry link');
     else if(cmd==='/add') this.startDraft(chat);
     else if(cmd==='/cancel'){this.clearDraft();this.send(chat,'Draft canceled. Nothing published.');}
     else if(cmd==='/destinations')this.destinationList(chat);
@@ -271,18 +275,19 @@ export class Contest {
         if(!count){this.ack(id,'No available destinations.');return;}
         this.ack(id,'Publishing to all…');this.send(cid,`✅ Entry #${entryId} queued for ${count} destinations.`);
       }
-      else if(/^admin:postallentries:-?\d+$/.test(action)){
-        const destinationId=Number(action.split(':')[2]),destination=this.state.destinations.find(d=>d.chat_id===destinationId);
+      else if(/^admin:postbatch:-?\d+:\d+$/.test(action)){
+        const [, ,destinationRaw,offsetRaw]=action.split(':'),destinationId=Number(destinationRaw),offset=Number(offsetRaw);
+        const destination=this.state.destinations.find(d=>d.chat_id===destinationId);
         if(!destination){this.ack(id,'Destination unavailable.');return;}
-        const count=this.publishAllEntries(destination);
-        if(!count){this.ack(id,'No visible entries to publish.');return;}
-        this.ack(id,'Publishing all memes…');this.send(cid,`Queued all ${count} visible memes for ${esc(destination.title)}.`);
+        const count=this.publishAllEntries(destination,offset,10),first=offset+1,last=offset+count;
+        if(!count){this.ack(id,'No visible memes in this batch.');return;}
+        this.ack(id,'Publishing batch…');this.send(cid,`Queued batch entries ${first}–${last} (${count} memes) for ${esc(destination.title)}.`);
       }
-      else if(action==='admin:postallentriesall'){
-        const entries=this.standings(),destinations=this.state.destinations;
-        if(!entries.length||!destinations.length){this.ack(id,'No visible entries or destinations.');return;}
-        let count=0;for(const destination of destinations)count+=this.publishAllEntries(destination);
-        this.ack(id,'Publishing all memes…');this.send(cid,`Queued ${entries.length} visible memes for ${destinations.length} destinations (${count} posts).`);
+      else if(/^admin:postbatchall:\d+$/.test(action)){
+        const offset=Number(action.split(':')[2]),entries=this.standings().slice(offset,offset+10),destinations=this.state.destinations;
+        if(!entries.length||!destinations.length){this.ack(id,'No visible memes or destinations in this batch.');return;}
+        let count=0;for(const destination of destinations)count+=this.publishAllEntries(destination,offset,10);
+        this.ack(id,'Publishing batch…');this.send(cid,`Queued batch entries ${offset+1}–${offset+entries.length}: ${entries.length} memes for ${destinations.length} destinations (${count} posts).`);
       }
       else if(action==='admin:confirm'){
         if(this.state.draft?.step!=='confirm'){this.ack(id,'Draft already handled or expired.');return;}
