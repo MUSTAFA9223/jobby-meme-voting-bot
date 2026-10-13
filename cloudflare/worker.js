@@ -330,8 +330,10 @@ async function telegram(env,method,payload) {
 
 async function deliver(env,updateId) {
   const pending=await env.DB.prepare('SELECT * FROM webhook_outbox WHERE update_id=? AND delivered=0 ORDER BY id').bind(updateId).all();
-  const outcomes=await Promise.allSettled(pending.results.map(async row=>{
-    const payload=JSON.parse(row.payload);
+  // Preserve the exact outbox order. Concurrent sends can reorder a bulk
+  // publish and trigger Telegram flood limits, leaving part of the batch stuck.
+  for(let i=0;i<pending.results.length;i++) {
+    const row=pending.results[i],payload=JSON.parse(row.payload);
     try {
       const delivered=await telegram(env,row.method,payload);
       const caption=payload.caption||payload.media?.caption||'';
@@ -345,16 +347,22 @@ async function deliver(env,updateId) {
           .bind(fileId,Number(entryMatch[1]),source).run();
     }
     catch(e) {
-      // Expired callback IDs and unchanged edits are harmless. Other failed
-      // deliveries remain pending and cause Telegram to retry the webhook.
       const unavailableDestination=['sendPhoto','sendVideo','sendAnimation'].includes(row.method)&&Number(payload.chat_id)<0&&[400,403].includes(e.code)&&/(chat not found|bot was kicked|not enough rights|not a member|have no rights)/i.test(e.description||'');
-      if(unavailableDestination)await env.DB.prepare('UPDATE destinations SET active=0,updated_at=? WHERE chat_id=?').bind(now(),payload.chat_id).run();
-      else if(!(row.method==='answerCallbackQuery'&&e.code===400)&&!(row.method.startsWith('editMessage')&&e.code===400&&/message is not modified/i.test(e.description||'')))throw e;
+      if(unavailableDestination) {
+        await env.DB.prepare('UPDATE destinations SET active=0,updated_at=? WHERE chat_id=?').bind(now(),payload.chat_id).run();
+        await env.DB.prepare('UPDATE webhook_outbox SET delivered=1 WHERE id=?').bind(row.id).run();
+      } else if((row.method==='answerCallbackQuery'&&e.code===400)||
+        (row.method.startsWith('editMessage')&&e.code===400&&/message is not modified/i.test(e.description||''))) {
+        await env.DB.prepare('UPDATE webhook_outbox SET delivered=1 WHERE id=?').bind(row.id).run();
+      } else {
+        // Leave this item and every later item pending; webhook retries resume
+        // at this exact row without repeating earlier successful posts.
+        throw e;
+      }
     }
-    await env.DB.prepare('UPDATE webhook_outbox SET delivered=1 WHERE id=?').bind(row.id).run();
-  }));
-  const failed=outcomes.find(result=>result.status==='rejected');
-  if(failed)throw failed.reason;
+    if(!(row.method==='answerCallbackQuery')) await env.DB.prepare('UPDATE webhook_outbox SET delivered=1 WHERE id=?').bind(row.id).run();
+    if(i<pending.results.length-1) await new Promise(resolve=>setTimeout(resolve,350));
+  }
   await env.DB.prepare('UPDATE webhook_updates SET completed=1 WHERE update_id=?').bind(updateId).run();
 }
 
