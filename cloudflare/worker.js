@@ -83,6 +83,7 @@ export class Contest {
   entry(id,active=true) { return this.state.entries.find(e=>e.id===id && (!active||e.active===1)); }
   standings() { return this.state.entries.filter(e=>e.active===1).sort((a,b)=>a.id-b.id); }
   ids() { return this.state.entries.filter(e=>e.active===1).map(e=>e.id).sort((a,b)=>a-b); }
+  displayNumber(e) { const i=this.standings().findIndex(x=>x.id===e.id); return i<0?e.id:i+1; }
   duplicateReport(chat) {
     const entries=this.state.entries.slice().sort((a,b)=>a.id-b.id);
     const parent=entries.map((_,i)=>i);
@@ -189,9 +190,10 @@ export class Contest {
   }
   about(chat) { this.send(chat,'<b>JOBBY Meme Gallery</b>\n• Browse every official entry.\n• Open the original X post and creator profiles from each card.\n• Entries can only be added, changed, or published by the organizer.'); }
   caption(e) {
+    const displayNumber=String(this.displayNumber(e)).padStart(3,'0');
     const name=e.creator_name?`\n👤 Name: <b>${esc(e.creator_name)}</b>`:'';
     const telegram=e.telegram_username?`\n💬 Telegram: <b>@${esc(e.telegram_username)}</b>`:'';
-    return `🖼 <b>JOBBY MEME ENTRY — #${String(e.id).padStart(3,'0')}</b>${name}\n\n🐦 X creator: <b>@${esc(e.x_username)}</b>${telegram}\n🔗 Original post: <a href="${esc(e.tweet_url)}">View on X</a>`;
+    return `🖼 <b>JOBBY MEME ENTRY — #${displayNumber}</b>${name}\n\n🐦 X creator: <b>@${esc(e.x_username)}</b>${telegram}\n🔗 Original post: <a href="${esc(e.tweet_url)}">View on X</a>`;
   }
   publicCaption(e) { return this.caption(e); }
   entryKeyboard(e) {
@@ -215,7 +217,7 @@ export class Contest {
   browse(chat) {
     const entries=this.standings();
     if(!entries.length){this.send(chat,'No meme entries yet. Check back soon!');return;}
-    const buttons=entries.map(e=>button(`#${String(e.id).padStart(3,'0')} @${String(e.x_username).slice(0,15)}`,`open:${e.id}`));
+    const buttons=entries.map((e,i)=>button(`#${String(i+1).padStart(3,'0')} @${String(e.x_username).slice(0,15)}`,`open:${e.id}`));
     const rows=[];for(let i=0;i<buttons.length;i+=2)rows.push(buttons.slice(i,i+2));
     this.send(chat,`🖼 <b>JOBBY Meme Gallery</b> — ${entries.length} entries\n\nChoose an entry to view its meme and creator links.`,{inline_keyboard:rows});
   }
