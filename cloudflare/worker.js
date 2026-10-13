@@ -350,7 +350,7 @@ export class Contest {
       else if(action==='admin:confirm'){
         if(this.state.draft?.step!=='confirm'){this.ack(id,'Draft already handled or expired.');return;}
         const d=this.state.draft.data,n=Math.max(0,...this.state.entries.map(e=>e.id))+1;
-        this.write('INSERT INTO entries(id,photo_file_id,media_type,tweet_url,x_username,telegram_username,creator_name,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)',n,d.photo_file_id,d.media_type||'photo',d.tweet_url,d.x_username,d.telegram_username,d.creator_name||'',this.userId,now());
+        this.write('INSERT INTO entries(id,photo_file_id,media_type,tweet_url,x_username,telegram_username,creator_name,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)',n,d.photo_file_id,d.media_type||'photo',d.tweet_url,d.x_username,d.telegram_username||'',d.creator_name||'',this.userId,now());
         this.state.entries.push({...d,media_type:d.media_type||'photo',id:n,created_by:this.userId,active:1});this.clearDraft();
         this.ack(id,`Entry #${n} published`);this.send(cid,`✅ Entry #${n} saved.`,keyboard([button('📣 Publish to group/channel',`admin:publish:${n}`),button('🔗 Get private entry link',`admin:share:${n}`)]));this.show(cid,n);
       } else this.ack(id,'Unknown action.');return;
