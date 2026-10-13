@@ -98,7 +98,7 @@ export class Contest {
   startDraft(chat) { this.draft('media',{}); this.send(chat,'➕ <b>Add JOBBY meme</b>\nStep 1/4: Send the meme as a photo, video, or GIF.\n/cancel to stop.'); }
   welcome(chat) {
     const rows=[[button('🖼 Browse entries','menu:entries')],[button('ℹ️ About the gallery','menu:about')]];
-    if(this.isAdmin()) rows.push([button('➕ Add meme (admin)','admin:add')]);
+    if(this.isAdmin()) rows.push([button('➕ Add meme (admin)','admin:add')],[button('Publish all memes','admin:publishall')]);
     this.send(chat,'🖼 <b>JOBBY Meme Gallery</b>\n\nBrowse official entries and open each creator’s original X post.\nOnly the organizer can add or publish entries.',{inline_keyboard:rows});
   }
   about(chat) { this.send(chat,'<b>JOBBY Meme Gallery</b>\n• Browse every official entry.\n• Open the original X post and creator profiles from each card.\n• Entries can only be added, changed, or published by the organizer.'); }
@@ -145,6 +145,20 @@ export class Contest {
     const rows=destinations.map(d=>[button(`📣 ${String(d.title).slice(0,40)}`,`admin:post:${entryId}:${d.chat_id}`)]);
     if(destinations.length>1)rows.push([button('📣 Publish to all',`admin:postall:${entryId}`)]);
     this.send(chat,`Choose where to publish entry #${entryId}:`,{inline_keyboard:rows});
+  }
+  publishAllMenu(chat) {
+    const entries=this.standings(),destinations=this.state.destinations;
+    if(!entries.length){this.send(chat,'There are no visible meme entries to publish.');return;}
+    if(!destinations.length){this.destinationList(chat);return;}
+    const rows=destinations.map(d=>[button(`📣 All memes → ${String(d.title).slice(0,32)}`,`admin:postallentries:${d.chat_id}`)]);
+    rows.push([button('📣 All memes → ALL destinations','admin:postallentriesall')]);
+    this.send(chat,`<b>Publish every visible meme?</b>\\n\\n${entries.length} memes will be posted in order to the selected destination. Existing posts will not be removed. Choose carefully to avoid reposting entries.`,{inline_keyboard:rows});
+  }
+  publishAllEntries(destination) {
+    const entries=this.standings();
+    if(!destination)return 0;
+    for(const entry of entries)this.publishEntry(entry.id,destination);
+    return entries.length;
   }
   publishEntry(entryId,destination) {
     const e=this.entry(entryId);if(!e||!destination)return false;
@@ -218,14 +232,11 @@ export class Contest {
     if(['/entries','/memes'].includes(cmd)){this.browse(chat);return;}
     if(['/about','/rules'].includes(cmd)){this.about(chat);return;}
     if(!this.isAdmin()){this.send(chat,'Organizer-only command. Try /start.');return;}
-    if(['/admin','/help'].includes(cmd)) this.send(chat,'<b>JOBBY Gallery Admin</b>\nForward a participant meme here to import its media, X link, and usernames automatically\n/add — Add photo, video, or GIF meme manually\n/cancel — Cancel draft\n/list — Entries\n/publish 12 — Publish in a group/channel\n/destinations — Connected groups/channels\n/register — Run inside a group to connect it\nForward a channel post here to connect that channel\n/remove 12 — Hide\n/restore 12 — Restore\n/stats — Entry counters\n/share 12 — Private entry link');
+    if(['/admin','/help'].includes(cmd)) this.send(chat,'<b>JOBBY Gallery Admin</b>\\nForward a participant meme here to import its media, X link, and usernames automatically\\n/add — Add photo, video, or GIF meme\\n/cancel — Cancel draft\\n/list — Entries\\n/publish 12 — Publish one entry\\n/publish all — Publish every visible meme at once\\n/destinations — Connected groups/channels\\n/register — Run inside a group to connect it\\nForward a channel post here to connect that channel\\n/remove 12 — Hide\\n/restore 12 — Restore\\n/stats — Entry counters\\n/share 12 — Private entry link');
     else if(cmd==='/add') this.startDraft(chat);
     else if(cmd==='/cancel'){this.clearDraft();this.send(chat,'Draft canceled. Nothing published.');}
     else if(cmd==='/destinations')this.destinationList(chat);
-    else if(cmd==='/publish'){
-      if(parts.length!==2||!/^\d+$/.test(parts[1]))this.send(chat,'Usage: /publish &lt;entry number&gt;');
-      else this.publishMenu(chat,Number(parts[1]));
-    }
+    else if(cmd==='/publish'){ if(parts.length!==2)this.send(chat,'Usage: /publish &lt;entry number&gt; or /publish all'); else if(parts[1].toLowerCase()==='all')this.publishAllMenu(chat); else if(!/^\\d+$/.test(parts[1]))this.send(chat,'Usage: /publish &lt;entry number&gt; or /publish all'); else this.publishMenu(chat,Number(parts[1])); }
     else if(cmd==='/list') this.send(chat,'<b>Latest entries</b>\n'+(this.state.entries.slice().sort((a,b)=>b.id-a.id).slice(0,50).map(e=>`#${e.id} @${esc(e.x_username)} — ${e.active?'visible':'hidden'}`).join('\n')||'None'));
     else if(cmd==='/stats'){
       const active=this.standings();this.send(chat,`<b>Gallery stats</b>\nVisible entries: ${active.length}\nHidden entries: ${this.state.entries.length-active.length}`);
@@ -245,7 +256,7 @@ export class Contest {
     if(action==='menu:about'){this.ack(id);this.about(cid);return;}
     if(action.startsWith('admin:')){
       if(!this.isAdmin()){this.ack(id,'Organizer only.');return;}
-      if(action==='admin:add'){this.ack(id);this.startDraft(cid);}
+      if(action==='admin:add'){this.ack(id);this.startDraft(cid);} else if(action==='admin:publishall'){this.ack(id);this.publishAllMenu(cid);}
       else if(action==='admin:cancel'){this.clearDraft();this.ack(id,'Draft canceled');this.send(cid,'Draft canceled; nothing published.');}
       else if(/^admin:publish:\d+$/.test(action)){const entryId=Number(action.split(':')[2]);this.ack(id);this.publishMenu(cid,entryId);}
       else if(/^admin:share:\d+$/.test(action)){const entryId=Number(action.split(':')[2]);this.ack(id);this.send(cid,`Share: https://t.me/${esc(this.env.JOBBY_BOT_USERNAME)}?start=m${entryId}`);}
@@ -259,6 +270,19 @@ export class Contest {
         const entryId=Number(action.split(':')[2]),count=this.state.destinations.filter(d=>this.publishEntry(entryId,d)).length;
         if(!count){this.ack(id,'No available destinations.');return;}
         this.ack(id,'Publishing to all…');this.send(cid,`✅ Entry #${entryId} queued for ${count} destinations.`);
+      }
+      else if(/^admin:postallentries:-?\d+$/.test(action)){
+        const destinationId=Number(action.split(':')[2]),destination=this.state.destinations.find(d=>d.chat_id===destinationId);
+        if(!destination){this.ack(id,'Destination unavailable.');return;}
+        const count=this.publishAllEntries(destination);
+        if(!count){this.ack(id,'No visible entries to publish.');return;}
+        this.ack(id,'Publishing all memes…');this.send(cid,`Queued all ${count} visible memes for ${esc(destination.title)}.`);
+      }
+      else if(action==='admin:postallentriesall'){
+        const entries=this.standings(),destinations=this.state.destinations;
+        if(!entries.length||!destinations.length){this.ack(id,'No visible entries or destinations.');return;}
+        let count=0;for(const destination of destinations)count+=this.publishAllEntries(destination);
+        this.ack(id,'Publishing all memes…');this.send(cid,`Queued ${entries.length} visible memes for ${destinations.length} destinations (${count} posts).`);
       }
       else if(action==='admin:confirm'){
         if(this.state.draft?.step!=='confirm'){this.ack(id,'Draft already handled or expired.');return;}
