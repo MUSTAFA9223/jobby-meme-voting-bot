@@ -174,7 +174,7 @@ test('second batch publishes entries 11–20 in order and falls back to text for
  };
  assert.equal((await post(env,cb(77,'admin:postbatch:-100123:10',8355389673))).status,200);
  const published=sent.filter(x=>x.method==='sendPhoto'&&x.payload.chat_id===-100123).map(x=>x.payload.photo);
- assert.deepEqual(published,['photo-file-11','photo-file-12','photo-file-13','photo-file-14','photo-file-15','photo-file-16','photo-file-17','photo-file-18','photo-file-19','photo-file-20'].filter(x=>x!=='photo-file-11'));
+ assert.deepEqual(published,['photo-file-11','photo-file-12','photo-file-13','photo-file-14','photo-file-15','photo-file-16','photo-file-17','photo-file-18','photo-file-19','photo-file-20']);
  assert.ok(sent.some(x=>x.method==='sendMessage'&&x.payload.text.includes('Media could not be attached')&&x.payload.text.includes('JOBBY MEME ENTRY — #011')));
  assert.equal(db.prepare('SELECT completed FROM webhook_updates WHERE update_id=77').get().completed,1);
  assert.equal(db.prepare('SELECT COUNT(*) n FROM webhook_outbox WHERE update_id=77 AND delivered=0').get().n,0);
