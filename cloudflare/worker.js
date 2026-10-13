@@ -365,6 +365,7 @@ async function deliver(env,updateId) {
   const pending=await env.DB.prepare('SELECT * FROM webhook_outbox WHERE update_id=? AND delivered=0 ORDER BY id').bind(updateId).all();
   // Preserve the exact outbox order. Concurrent sends can reorder a bulk
   // publish and trigger Telegram flood limits, leaving part of the batch stuck.
+  const failedMedia=[];
   for(let i=0;i<pending.results.length;i++) {
     const row=pending.results[i],payload=JSON.parse(row.payload);
     try {
@@ -384,6 +385,13 @@ async function deliver(env,updateId) {
       if(unavailableDestination) {
         await env.DB.prepare('UPDATE destinations SET active=0,updated_at=? WHERE chat_id=?').bind(now(),payload.chat_id).run();
         await env.DB.prepare('UPDATE webhook_outbox SET delivered=1 WHERE id=?').bind(row.id).run();
+      } else if(['sendPhoto','sendVideo','sendAnimation'].includes(row.method)&&e.code===400) {
+        // A single malformed/expired media file must not block entries 12–20
+        // behind it. Skip only this permanently rejected post and report it.
+        const caption=payload.caption||'';
+        const match=String(caption).match(/JOBBY MEME ENTRY — #(\d+)/);
+        failedMedia.push(match?Number(match[1]):null);
+        await env.DB.prepare('UPDATE webhook_outbox SET delivered=1 WHERE id=?').bind(row.id).run();
       } else if((row.method==='answerCallbackQuery'&&e.code===400)||
         (row.method.startsWith('editMessage')&&e.code===400&&/message is not modified/i.test(e.description||''))) {
         await env.DB.prepare('UPDATE webhook_outbox SET delivered=1 WHERE id=?').bind(row.id).run();
@@ -395,6 +403,14 @@ async function deliver(env,updateId) {
     }
     if(!(row.method==='answerCallbackQuery')) await env.DB.prepare('UPDATE webhook_outbox SET delivered=1 WHERE id=?').bind(row.id).run();
     if(i<pending.results.length-1) await new Promise(resolve=>setTimeout(resolve,350));
+  }
+  if(failedMedia.length) {
+    const admins=(env.JOBBY_ADMIN_IDS||'').split(',').map(Number).filter(Number.isFinite);
+    if(admins.length) {
+      try {
+        await telegram(env,'sendMessage',{chat_id:admins[0],text:'Batch publishing skipped entries that Telegram permanently rejected: '+failedMedia.filter(Boolean).map(n=>'#'+n).join(', ')+'. Other entries in the batch continued.'});
+      } catch {}
+    }
   }
   await env.DB.prepare('UPDATE webhook_updates SET completed=1 WHERE update_id=?').bind(updateId).run();
 }
