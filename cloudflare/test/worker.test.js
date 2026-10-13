@@ -163,7 +163,7 @@ test('organizer chooses destination first, then publishes visible memes in batch
  assert.ok(sent.some(x=>x.method==='sendMessage'&&x.payload.text.includes('2 memes for 2 destinations')));
 });
 
-test('second batch continues after one permanently rejected meme',async()=>{
+test('batch publishing stops at the first rejected meme and leaves it plus later entries pending',async()=>{
  const {env,db}=fixture(),sent=[];
  for(let id=1;id<=20;id++){seed(db,id,'photo');db.prepare('UPDATE entries SET photo_file_id=? WHERE id=?').run('photo-file-'+id,id);}
  db.prepare('INSERT INTO destinations(chat_id,title,chat_type,active,registered_by,updated_at) VALUES(?,?,?,?,?,?)').run(-100123,'JOBBY Community','supergroup',1,8355389673,'today');
@@ -172,11 +172,11 @@ test('second batch continues after one permanently rejected meme',async()=>{
   if(method==='sendPhoto'&&payload.photo==='photo-file-11')return Response.json({ok:false,error_code:400,description:'Bad Request: wrong file identifier'}, {status:400});
   return Response.json({ok:true,result:{}});
  };
- assert.equal((await post(env,cb(77,'admin:postbatch:-100123:10',8355389673))).status,200);
+ assert.equal((await post(env,cb(77,'admin:postbatch:-100123:10',8355389673))).status,503);
  const published=sent.filter(x=>x.method==='sendPhoto'&&x.payload.chat_id===-100123).map(x=>x.payload.photo);
- assert.equal(published.length,9);
- for(let id=12;id<=20;id++)assert.ok(published.includes('photo-file-'+id),`entry ${id} should still publish`);
- assert.ok(sent.some(x=>x.method==='sendMessage'&&x.payload.text.includes('#11')));
- assert.equal(db.prepare('SELECT completed FROM webhook_updates WHERE update_id=77').get().completed,1);
- assert.equal(db.prepare('SELECT COUNT(*) n FROM webhook_outbox WHERE update_id=77 AND delivered=0').get().n,0);
+ assert.deepEqual(published,['photo-file-11']);
+ assert.equal(published.includes('photo-file-12'),false,'entry 12 must not be attempted after entry 11 fails');
+ assert.equal(db.prepare('SELECT completed FROM webhook_updates WHERE update_id=77').get().completed,0);
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM webhook_outbox WHERE update_id=77 AND delivered=0').get().n,10);
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM webhook_outbox WHERE update_id=77 AND delivered=1').get().n,1,'only the callback acknowledgement before the failed post should be delivered');
 });
