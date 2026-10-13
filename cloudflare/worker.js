@@ -377,7 +377,7 @@ export class Contest {
       else if(/^admin:entry:\d+$/.test(action)){this.ack(id);this.adminEntryActions(cid,Number(action.split(':')[2]));}
       else if(/^admin:editmenu:\d+$/.test(action)){this.ack(id);this.adminEditMenu(cid,Number(action.split(':')[2]));}
       else if(/^admin:edit:(tweet|x|telegram|name):\d+$/.test(action)){
-        const [,field,rawId]=action.split(':'),entryId=Number(rawId),e=this.state.entries.find(x=>x.id===entryId);
+        const [, ,field,rawId]=action.split(':'),entryId=Number(rawId),e=this.state.entries.find(x=>x.id===entryId);
         if(!e){this.ack(id,'Entry not found.');return;}
         const steps={tweet:'edit_tweet',x:'edit_x',telegram:'edit_telegram',name:'edit_name'};
         const prompts={tweet:'Send the new X post URL.',x:'Send the new X username (with or without @).',telegram:'Send the new Telegram username (with or without @), or - to clear it.',name:'Send the creator name, or - to clear it.'};
