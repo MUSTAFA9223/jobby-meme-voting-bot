@@ -119,12 +119,13 @@ test('failed delivery retries the outbox without repeating draft mutations',asyn
  const u=message(1,'/add');assert.equal((await post(env,u)).status,503);assert.equal(db.prepare('SELECT COUNT(*) n FROM drafts').get().n,1);
  globalThis.fetch=async()=>Response.json({ok:true,result:{}});assert.equal((await post(env,u)).status,200);assert.equal(db.prepare('SELECT COUNT(*) n FROM webhook_outbox').get().n,1);assert.equal(db.prepare('SELECT completed FROM webhook_updates').get().completed,1);
 });
-test('independent Telegram responses are delivered in parallel',async()=>{
+test('Telegram responses are delivered sequentially in outbox order',async()=>{
  const {env,db}=fixture();seed(db);db.prepare('INSERT INTO destinations(chat_id,title,chat_type,active,registered_by,updated_at) VALUES(?,?,?,?,?,?)').run(-100123,'JOBBY Community','supergroup',1,8355389673,'today');
- let active=0,maxActive=0;
- globalThis.fetch=async()=>{active++;maxActive=Math.max(maxActive,active);await new Promise(resolve=>setTimeout(resolve,15));active--;return Response.json({ok:true,result:{}});};
+ let active=0,maxActive=0;const order=[];
+ globalThis.fetch=async(url,opts)=>{active++;maxActive=Math.max(maxActive,active);order.push(String(url).split('/').at(-1));await new Promise(resolve=>setTimeout(resolve,5));active--;return Response.json({ok:true,result:{}});};
  assert.equal((await post(env,cb(1,'admin:post:1:-100123',8355389673))).status,200);
- assert.ok(maxActive>=2,`expected concurrent Telegram calls, saw ${maxActive}`);
+ assert.equal(maxActive,1,`expected one Telegram call at a time, saw ${maxActive}`);
+ assert.deepEqual(order,['answerCallbackQuery','sendPhoto','sendMessage']);
  assert.equal(db.prepare('SELECT COUNT(*) n FROM webhook_outbox WHERE delivered=1').get().n,3);
 });
 test('URLs and handles reject hostile inputs and normalize official URLs',()=>{
