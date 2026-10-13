@@ -83,3 +83,24 @@ test('non-admin and ordinary messages never call the external service', async ()
   assert.equal(await enrichForwardedXMedia(ordinary, {JOBBY_ADMIN_IDS: '8355389673'}, fetcher), ordinary);
   assert.equal(calls, 0);
 });
+
+test('pasting an X URL directly fetches media without inventing a Telegram username', async () => {
+  const update = {
+    update_id: 2,
+    message: {
+      message_id: 2,
+      chat: {id: 8355389673, type: 'private'},
+      from: {id: 8355389673},
+      text: 'https://x.com/Simdavv/status/2108992018710245825',
+    },
+  };
+  const fetcher = async () => Response.json({code: 200, status: {media: {all: [
+    {type: 'video', formats: [
+      {container: 'mp4', bitrate: 832000, url: 'https://video.twimg.com/high.mp4'},
+    ]},
+  ]}}});
+  const result = await enrichForwardedXMedia(update, {JOBBY_ADMIN_IDS: '8355389673'}, fetcher);
+  assert.equal(result.message.video.file_id, 'https://video.twimg.com/high.mp4');
+  assert.equal(result.message.forward_origin.sender_user.username, undefined);
+  assert.equal(update.message.forward_origin, undefined);
+});
