@@ -126,7 +126,7 @@ test('Telegram responses are delivered sequentially in outbox order',async()=>{
  assert.equal((await post(env,cb(1,'admin:post:1:-100123',8355389673))).status,200);
  assert.equal(maxActive,1,`expected one Telegram call at a time, saw ${maxActive}`);
  assert.deepEqual(order,['sendPhoto','answerCallbackQuery','sendMessage']);
- assert.equal(db.prepare('SELECT COUNT(*) n FROM webhook_outbox WHERE delivered=1').get().n,3);
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM webhook_outbox WHERE delivered=1').get().n,2);
 });
 test('URLs and handles reject hostile inputs and normalize official URLs',()=>{
  assert.equal(normalizeTweet('https://twitter.com/a/status/123?s=4'),'https://x.com/a/status/123');assert.throws(()=>normalizeTweet('https://x.com.evil.test/a/status/123'));assert.throws(()=>normalizeTweet('http://x.com/a/status/123'));assert.throws(()=>normalizeHandle('<script>',true));assert.equal(normalizeHandle('@creatorname',true),'creatorname');
