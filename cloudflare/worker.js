@@ -85,26 +85,34 @@ export class Contest {
   ids() { return this.state.entries.filter(e=>e.active===1).map(e=>e.id).sort((a,b)=>a-b); }
   duplicateReport(chat) {
     const entries=this.state.entries.slice().sort((a,b)=>a.id-b.id);
-    const groups=new Map();
-    for(const e of entries) {
-      for(const [kind,raw] of [['X',e.x_username],['Telegram',e.telegram_username]]) {
+    const parent=entries.map((_,i)=>i);
+    const find=i=>{while(parent[i]!==i){parent[i]=parent[parent[i]];i=parent[i];}return i;};
+    const join=(a,b)=>{a=find(a);b=find(b);if(a!==b)parent[b]=a;};
+    const owner=new Map();
+    entries.forEach((e,i)=>{
+      for(const [kind,raw] of [['X',e.x_username],['Telegram',e.telegram_username]]){
         const handle=String(raw||'').trim().replace(/^@/,'').toLowerCase();
-        if(!handle) continue;
+        if(!handle)continue;
         const key=kind+':'+handle;
-        if(!groups.has(key)) groups.set(key,{kind,handle,entries:[]});
-        groups.get(key).entries.push(e);
+        if(owner.has(key))join(i,owner.get(key));else owner.set(key,i);
       }
-    }
-    const duplicates=[...groups.values()].filter(g=>g.entries.length>1).sort((a,b)=>b.entries.length-a.entries.length||a.kind.localeCompare(b.kind)||a.handle.localeCompare(b.handle));
-    if(!duplicates.length){this.send(chat,'<b>Duplicate participant check</b>\\nNo X or Telegram account appears on more than one entry.');return;}
-    const lines=duplicates.map(g=>{
-      const nums=g.entries.map(e=>'#'+String(e.id).padStart(3,'0')+(e.active===1?'':' (hidden)')).join(', ');
-      const x=[...new Set(g.entries.map(e=>String(e.x_username||'').trim().replace(/^@/,'')).filter(Boolean))];
-      const tg=[...new Set(g.entries.map(e=>String(e.telegram_username||'').trim().replace(/^@/,'')).filter(Boolean))];
-      return '<b>'+g.kind+' duplicate: @'+esc(g.handle)+'</b> — '+g.entries.length+' memes\\nEntries: '+nums+'\\nX: '+(x.length?'@'+x.map(esc).join(', @'):'not provided')+'\\nTelegram: '+(tg.length?'@'+tg.map(esc).join(', @'):'not provided');
     });
-    const text='<b>Duplicate participant report</b>\\nAccounts listed below appear on multiple entries. Hidden entries are marked.\\n\\n'+lines.join('\\n\\n');
-    for(let i=0;i<text.length;i+=3800)this.send(chat,text.slice(i,i+3800));
+    const grouped=new Map();
+    entries.forEach((e,i)=>{const root=find(i);if(!grouped.has(root))grouped.set(root,[]);grouped.get(root).push(e);});
+    const duplicates=[...grouped.values()].filter(group=>group.length>1).sort((a,b)=>a[0].id-b[0].id);
+    if(!duplicates.length){
+      this.send(chat,'<b>Duplicate participant check</b>\\nNo X or Telegram account appears on more than one entry.');
+      return;
+    }
+    this.send(chat,'<b>Duplicate participants</b>\\nEach card shows Telegram, X, and all submitted X post links for that participant.');
+    for(const group of duplicates){
+      const tg=[...new Set(group.map(e=>String(e.telegram_username||'').trim().replace(/^@/,'' )).filter(Boolean))];
+      const xs=[...new Set(group.map(e=>String(e.x_username||'').trim().replace(/^@/,'' )).filter(Boolean))];
+      const links=[...new Map(group.filter(e=>e.tweet_url).map(e=>[e.tweet_url,e])).values()];
+      const entryLines=links.map(e=>'<a href="'+esc(e.tweet_url)+'">Entry #'+String(e.id).padStart(3,'0')+(e.active===1?'':' (hidden)')+'</a>').join('\\n');
+      const card='<b>Participant card</b>\\nTelegram: '+(tg.length?tg.map(h=>'<a href="https://t.me/'+encodeURIComponent(h)+'">@'+esc(h)+'</a>').join(', '):'Not provided')+'\\nX: '+(xs.length?xs.map(h=>'@'+esc(h)).join(', '):'Not provided')+'\\nEntries: '+group.map(e=>'#'+String(e.id).padStart(3,'0')+(e.active===1?'':' (hidden)')).join(', ')+'\\nSubmitted posts:\\n'+(entryLines||'No X links recorded');
+      this.send(chat,card);
+    }
   }
   draft(step,data) {
     this.state.draft={step,data};
