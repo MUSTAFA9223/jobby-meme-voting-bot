@@ -152,7 +152,7 @@ export class Contest {
     if(!destinations.length){this.destinationList(chat);return;}
     const rows=destinations.map(d=>[button(`📣 All memes → ${String(d.title).slice(0,32)}`,`admin:postallentries:${d.chat_id}`)]);
     rows.push([button('📣 All memes → ALL destinations','admin:postallentriesall')]);
-    this.send(chat,`<b>Publish every visible meme?</b>\\n\\n${entries.length} memes will be posted in order to the selected destination. Existing posts will not be removed. Choose carefully to avoid reposting entries.`,{inline_keyboard:rows});
+    this.send(chat,`<b>Publish every visible meme?</b>\n\n${entries.length} memes will be posted in order to the selected destination. Existing posts will not be removed. Choose carefully to avoid reposting entries.`,{inline_keyboard:rows});
   }
   publishAllEntries(destination) {
     const entries=this.standings();
