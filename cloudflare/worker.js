@@ -162,9 +162,20 @@ export class Contest {
     const e=this.state.entries.find(x=>x.id===id);
     if(!e){this.send(chat,'Entry not found.',{inline_keyboard:[[button('Back to entries','admin:entries')]]});return;}
     this.send(chat,`<b>Entry #${e.id}</b>\\nX account: @${esc(e.x_username||'not set')}\\nStatus: ${e.active?'Visible':'Hidden'}`,{inline_keyboard:[
+      [button('Edit entry details',`admin:editmenu:${id}`)],
       [button(e.active?'Hide entry':'Restore entry',e.active?`admin:hide:${id}`:`admin:restore:${id}`)],
       [button('Publish this entry',`admin:publish:${id}`),button('Get entry link',`admin:share:${id}`)],
+      [button('Delete entry',`admin:deleteconfirm:${id}`)],
       [button('Back to entries','admin:entries'),button('Admin Panel','admin:menu')]
+    ]});
+  }
+  adminEditMenu(chat,id) {
+    const e=this.state.entries.find(x=>x.id===id);
+    if(!e){this.send(chat,'Entry not found.',{inline_keyboard:[[button('Back to entries','admin:entries')]]});return;}
+    this.send(chat,`<b>Edit entry #${id}</b>\nChoose which field to update. The current meme media will remain unchanged.`,{inline_keyboard:[
+      [button('X post link','admin:edit:tweet:'+id),button('X username','admin:edit:x:'+id)],
+      [button('Telegram username','admin:edit:telegram:'+id),button('Creator name','admin:edit:name:'+id)],
+      [button('Back to entry','admin:entry:'+id)]
     ]});
   }
   about(chat) { this.send(chat,'<b>JOBBY Meme Gallery</b>\n• Browse every official entry.\n• Open the original X post and creator profiles from each card.\n• Entries can only be added, changed, or published by the organizer.'); }
@@ -275,6 +286,25 @@ export class Contest {
   }
   handleDraft(chat,message) {
     const draft=this.state.draft;if(!draft)return false;const {step,data}=draft;
+    if(step.startsWith('edit_')){
+      const entryId=Number(data.edit_entry_id),e=this.state.entries.find(x=>x.id===entryId);
+      if(!e){this.clearDraft();this.send(chat,'Entry not found. Edit canceled.');return true;}
+      const raw=String(message.text||'').trim();
+      if(!raw){this.send(chat,'Send a value, or send - to clear an optional field.');return true;}
+      try {
+        let column,value,label;
+        if(step==='edit_tweet'){column='tweet_url';value=normalizeTweet(raw);label='X post link';}
+        else if(step==='edit_x'){column='x_username';value=normalizeHandle(raw);label='X username';}
+        else if(step==='edit_telegram'){column='telegram_username';value=raw==='-'?'':normalizeHandle(raw,true);label='Telegram username';}
+        else if(step==='edit_name'){column='creator_name';value=raw==='-'?'':raw.slice(0,120);label='Creator name';}
+        else {this.clearDraft();this.send(chat,'Unknown edit state.');return true;}
+        this.write(`UPDATE entries SET ${column}=? WHERE id=?`,value,entryId);
+        e[column]=value;
+        this.clearDraft();
+        this.send(chat,`Entry #${entryId} updated: ${label}.`,{inline_keyboard:[[button('Back to entry','admin:entry:'+entryId),button('Admin Panel','admin:menu')]]});
+      } catch(err){this.send(chat,`Invalid value: ${esc(err.message)} Try again, or /cancel to stop.`);}
+      return true;
+    }
     if(step==='confirm'){this.send(chat,'Tap Publish or Cancel on the preview.');return true;}
     if(step==='media'||step==='photo'){
       const photo=message.photo?.at(-1),video=message.video,animation=message.animation;
@@ -345,6 +375,31 @@ export class Contest {
       else if(action==='admin:destinations'){this.ack(id);this.destinationList(cid);}
       else if(action==='admin:stats'){const active=this.standings();this.ack(id);this.send(cid,`<b>Gallery Statistics</b>\\nVisible entries: ${active.length}\\nHidden entries: ${this.state.entries.length-active.length}`,{inline_keyboard:[[button('Back to Admin Panel','admin:menu')]]});}
       else if(/^admin:entry:\d+$/.test(action)){this.ack(id);this.adminEntryActions(cid,Number(action.split(':')[2]));}
+      else if(/^admin:editmenu:\d+$/.test(action)){this.ack(id);this.adminEditMenu(cid,Number(action.split(':')[2]));}
+      else if(/^admin:edit:(tweet|x|telegram|name):\d+$/.test(action)){
+        const [,field,rawId]=action.split(':'),entryId=Number(rawId),e=this.state.entries.find(x=>x.id===entryId);
+        if(!e){this.ack(id,'Entry not found.');return;}
+        const steps={tweet:'edit_tweet',x:'edit_x',telegram:'edit_telegram',name:'edit_name'};
+        const prompts={tweet:'Send the new X post URL.',x:'Send the new X username (with or without @).',telegram:'Send the new Telegram username (with or without @), or - to clear it.',name:'Send the creator name, or - to clear it.'};
+        this.draft(steps[field],{edit_entry_id:entryId});
+        this.ack(id);this.send(cid,`<b>Edit entry #${entryId}</b>\n${prompts[field]}\n/cancel to stop.`);
+      }
+      else if(/^admin:deleteconfirm:\d+$/.test(action)){
+        const entryId=Number(action.split(':')[2]),e=this.state.entries.find(x=>x.id===entryId);
+        if(!e){this.ack(id,'Entry not found.');return;}
+        this.ack(id);
+        this.send(cid,`<b>Delete entry #${entryId}?</b>\nThis permanently removes the entry from the JOBBY gallery database. Posts already published to Telegram channels or groups will not be recalled automatically. This cannot be undone.`,{inline_keyboard:[
+          [button('Confirm delete',`admin:delete:${entryId}`),button('Cancel','admin:entry:'+entryId)]
+        ]});
+      }
+      else if(/^admin:delete:\d+$/.test(action)){
+        const entryId=Number(action.split(':')[2]),exists=this.state.entries.some(x=>x.id===entryId);
+        if(!exists){this.ack(id,'Entry not found.');return;}
+        this.write('DELETE FROM entries WHERE id=?',entryId);
+        this.state.entries=this.state.entries.filter(x=>x.id!==entryId);
+        this.clearDraft();this.ack(id,'Entry deleted');
+        this.send(cid,`Entry #${entryId} has been deleted from the gallery.`,{inline_keyboard:[[button('Manage entries','admin:entries'),button('Admin Panel','admin:menu')]]});
+      }
       else if(/^admin:(hide|restore):\d+$/.test(action)){const [,verb,raw]=action.split(':'),entryId=Number(raw),e=this.state.entries.find(x=>x.id===entryId);if(!e){this.ack(id,'Entry not found.');return;}e.active=verb==='restore'?1:0;this.write('UPDATE entries SET active=? WHERE id=?',e.active,entryId);this.ack(id,verb==='restore'?'Entry restored':'Entry hidden');this.adminEntryActions(cid,entryId);}
       else if(action==='admin:add'){this.ack(id);this.startDraft(cid);} else if(action==='admin:publishall'){this.ack(id);this.publishAllMenu(cid);} else if(action==='admin:duplicates'){this.ack(id,'Checking duplicate accounts…');this.duplicateReport(cid);}
       else if(action==='admin:publishdestall'){this.ack(id);this.publishBatchMenu(cid,null);}
