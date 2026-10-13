@@ -477,9 +477,12 @@ export class Contest {
     }
     const m=update.message||update.channel_post;if(!m?.chat?.id||!m.from?.id)return;
     const forwardedChannel=m.forward_origin?.type==='channel'?m.forward_origin.chat:(m.forward_from_chat?.type==='channel'?m.forward_from_chat:null);
-    if(this.isAdmin()&&m.chat.type==='private'&&forwardedChannel){this.setDestination(forwardedChannel,true);this.send(m.chat.id,`✅ Channel connected: ${esc(forwardedChannel.title||forwardedChannel.id)}. Use /publish &lt;entry number&gt; to publish an entry.`);return;}
+    const hasMemeMedia=Boolean(m.photo||m.video||m.animation);
+    // A forwarded media post is a submission, even if another draft is open.
+    // A channel forward without media is still the shortcut for connecting a channel.
+    if(this.isAdmin()&&m.chat.type==='private'&&forwardedChannel&&!hasMemeMedia){this.setDestination(forwardedChannel,true);this.send(m.chat.id,`✅ Channel connected: ${esc(forwardedChannel.title||forwardedChannel.id)}. Use /publish &lt;entry number&gt; to publish an entry.`);return;}
     if(m.text?.startsWith('/'))this.command(m);
-    else if(this.isAdmin()&&m.chat.type==='private'&&!this.state.draft&&this.importForwarded(m.chat.id,m))return;
+    else if(this.isAdmin()&&m.chat.type==='private'&&this.importForwarded(m.chat.id,m))return;
     else if(this.isAdmin()&&m.chat.type==='private'&&this.handleDraft(m.chat.id,m))return;
     else if(m.chat.type==='private')this.send(m.chat.id,'Use /start to browse the JOBBY meme gallery. Only the organizer can add entries.');
   }

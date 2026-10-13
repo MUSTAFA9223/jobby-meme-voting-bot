@@ -42,6 +42,35 @@ test('admin can forward a community meme and the bot prepares every detected fie
  assert.equal((await post(env,cb(2,'admin:confirm',8355389673))).status,200);
  assert.deepEqual({...db.prepare('SELECT photo_file_id,tweet_url,x_username,telegram_username FROM entries').get()},{photo_file_id:'community-meme',tweet_url:'https://x.com/MemeArtist/status/98765',x_username:'MemeArtist',telegram_username:'memeartisttg'});
 });
+test('forwarded meme submission takes priority over an older open draft',async()=>{
+ const {env,db}=fixture(),sent=[];
+ globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
+ await post(env,message(1,'/add'));
+ const forwarded=mediaMessage(2,'video','new-community-video');
+ forwarded.message.caption='New submission https://x.com/NewCreator/status/987654';
+ forwarded.message.forward_origin={type:'user',sender_user:{id:77,username:'creator_tg'}};
+ await post(env,forwarded);
+ const draft=db.prepare('SELECT step,data FROM drafts WHERE admin_id=?').get(8355389673);
+ assert.equal(draft.step,'confirm');
+ assert.deepEqual(JSON.parse(draft.data),{media_type:'video',photo_file_id:'new-community-video',forwarded_import:true,tweet_url:'https://x.com/NewCreator/status/987654',x_username:'NewCreator',telegram_username:'creator_tg'});
+ assert.ok(sent.some(x=>x.method==='sendMessage'&&x.payload.text?.includes('Review before publishing')&&x.payload.reply_markup?.inline_keyboard?.flat().some(b=>b.callback_data==='admin:confirm')));
+});
+
+test('forwarded channel media is imported as a meme instead of only connecting the channel',async()=>{
+ const {env,db}=fixture(),sent=[];
+ globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
+ const forwarded=mediaMessage(1,'photo','channel-meme');
+ forwarded.message.caption='https://x.com/ChannelCreator/status/987655';
+ forwarded.message.forward_origin={type:'channel',chat:{id:-100456,title:'JOBBY Submissions',type:'channel'}};
+ await post(env,forwarded);
+ const draft=db.prepare('SELECT step,data FROM drafts WHERE admin_id=?').get(8355389673);
+ assert.equal(draft.step,'confirm');
+ assert.equal(JSON.parse(draft.data).photo_file_id,'channel-meme');
+ assert.equal(JSON.parse(draft.data).x_username,'ChannelCreator');
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM destinations').get().n,0);
+ assert.ok(sent.some(x=>x.method==='sendMessage'&&x.payload.text?.includes('Review before publishing')));
+});
+
 test('X-link media submission saves when no Telegram username is provided',async()=>{
  const {env,db}=fixture(),sent=[];globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
  const imported=mediaMessage(1,'photo','https://pbs.twimg.com/media/meme.jpg');
@@ -236,3 +265,4 @@ test('admin duplicate report renders participant cards with submitted post links
  assert.ok(report.includes('Open tweet'));
  assert.ok(report.includes('https://x.com/'));
 });
+
