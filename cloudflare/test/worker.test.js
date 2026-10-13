@@ -266,3 +266,28 @@ test('admin duplicate report renders participant cards with submitted post links
  assert.ok(report.includes('https://x.com/'));
 });
 
+
+test('visible gallery numbering stays sequential after hiding or deleting an entry',async()=>{
+ const {env,db}=fixture(),sent=[];
+ seed(db,1);seed(db,2);seed(db,3);
+ globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
+ await post(env,cb(1,'admin:hide:2',8355389673));
+ await post(env,message(2,'/entries',44));
+ const menu=sent.filter(x=>x.method==='sendMessage'&&x.payload.text?.includes('Choose an entry')).at(-1);
+ assert.ok(menu);
+ const labels=menu.payload.reply_markup.inline_keyboard.flat().map(x=>x.text);
+ assert.ok(labels.some(x=>x.startsWith('#001 @creator')));
+ assert.ok(labels.some(x=>x.startsWith('#002 @creator')));
+ assert.equal(labels.some(x=>x.startsWith('#003 @creator')),false);
+ await post(env,cb(3,'open:3',44));
+ const card=sent.filter(x=>x.method==='sendPhoto'&&x.payload.caption?.includes('JOBBY MEME ENTRY')).at(-1);
+ assert.ok(card);
+ assert.match(card.payload.caption,/JOBBY MEME ENTRY — #002/);
+ assert.equal(db.prepare('SELECT id FROM entries WHERE id=3').get().id,3);
+ await post(env,cb(4,'admin:deleteconfirm:1',8355389673));
+ await post(env,cb(5,'admin:delete:1',8355389673));
+ await post(env,message(6,'/entries',44));
+ const afterDelete=sent.filter(x=>x.method==='sendMessage'&&x.payload.text?.includes('Choose an entry')).at(-1);
+ assert.ok(afterDelete);
+ assert.ok(afterDelete.payload.reply_markup.inline_keyboard.flat().some(x=>x.text.startsWith('#001 @creator')&&x.callback_data==='open:3'));
+});
