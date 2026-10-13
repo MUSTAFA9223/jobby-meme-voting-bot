@@ -133,7 +133,7 @@ test('URLs and handles reject hostile inputs and normalize official URLs',()=>{
 });
 
 
-test('organizer can publish every visible meme to one or all connected destinations',async()=>{
+test('organizer can publish visible memes in batches of ten to one or all connected destinations',async()=>{
  const {env,db}=fixture(),sent=[];
  globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
  seed(db,1,'photo');seed(db,2,'video');seed(db,3,'animation');db.prepare('UPDATE entries SET active=0 WHERE id=2').run();
@@ -142,12 +142,13 @@ test('organizer can publish every visible meme to one or all connected destinati
  const menu=sent.find(x=>x.method==='sendMessage'&&x.payload.text.includes('Publish every visible meme'));
  assert.ok(menu);
  const options=menu.payload.reply_markup.inline_keyboard.flat().map(x=>x.callback_data);
- assert.ok(options.includes('admin:postallentries:-100123'));
- assert.ok(options.includes('admin:postallentriesall'));
- assert.equal((await post(env,cb(2,'admin:postallentries:-100123',8355389673))).status,200);
+ assert.ok(options.includes('admin:postbatch:-100123:0'));
+ assert.ok(options.includes('admin:postbatchall:0'));
+ assert.ok(menu.payload.text.includes('batches of 10'));
+ assert.equal((await post(env,cb(2,'admin:postbatch:-100123:0',8355389673))).status,200);
  assert.equal(sent.filter(x=>['sendPhoto','sendAnimation'].includes(x.method)&&x.payload.chat_id===-100123).length,2);
  assert.equal(sent.filter(x=>x.method==='sendVideo').length,0);
- assert.equal((await post(env,cb(3,'admin:postallentriesall',8355389673))).status,200);
+ assert.equal((await post(env,cb(3,'admin:postbatchall:0',8355389673))).status,200);
  assert.equal(sent.filter(x=>['sendPhoto','sendAnimation','sendVideo'].includes(x.method)).length,6);
- assert.ok(sent.some(x=>x.method==='sendMessage'&&x.payload.text.includes('2 visible memes for 2 destinations')));
+ assert.ok(sent.some(x=>x.method==='sendMessage'&&x.payload.text.includes('2 memes for 2 destinations')));
 });
