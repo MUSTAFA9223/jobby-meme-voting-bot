@@ -237,8 +237,9 @@ export class Contest {
       return true;
     }
     if(!data.tweet_url){this.draft('tweet',data);this.send(chat,'Meme received. Send the original X post URL to finish the entry.');return true;}
-    if(!data.telegram_username){this.draft('tg',data);this.send(chat,"Meme and X link detected. Send the participant's Telegram username.");return true;}
-    this.draft('confirm',data);this.send(chat,'✅ Meme, X link, X username, and Telegram username detected automatically.');this.preview(chat);return true;
+    // An X post URL is sufficient to identify a submission. Telegram usernames
+    // are optional and are never requested for link-based imports.
+    this.draft('confirm',data);this.send(chat,'✅ Meme media and X post detected. Telegram username is optional.');this.preview(chat);return true;
   }
   handleDraft(chat,message) {
     const draft=this.state.draft;if(!draft)return false;const {step,data}=draft;
@@ -249,8 +250,7 @@ export class Contest {
       if(!media){this.send(chat,'Send the meme as a Telegram photo, video, or GIF. /cancel to stop.');return true;}
       const next={...data,media_type:media.type,photo_file_id:media.file_id};
       if(data.forwarded_import&&next.tweet_url){
-        if(next.telegram_username){this.draft('confirm',next);this.preview(chat);}
-        else{this.draft('tg',next);this.send(chat,"Media and X link detected. Send the participant's Telegram username.");}
+        this.draft('confirm',next);this.preview(chat);
       }else{this.draft('tweet',next);this.send(chat,'Step 2/4: Paste the original X post URL.');}
       return true;
     }
@@ -259,8 +259,7 @@ export class Contest {
       if(step==='tweet'){
         const tweet_url=normalizeTweet(text),next={...data,tweet_url,x_username:xHandleFromTweet(tweet_url)};
         if(data.forwarded_import){
-          if(next.telegram_username){this.draft('confirm',next);this.preview(chat);}
-          else{this.draft('tg',next);this.send(chat,"X link detected. Send the participant's Telegram username.");}
+          this.draft('confirm',next);this.preview(chat);
         }else{this.draft('x',next);this.send(chat,"Step 3/4: Send the participant's X username.");}
       }
       else if(step==='x'){this.draft('tg',{...data,x_username:normalizeHandle(text)});this.send(chat,"Step 4/4: Send the participant's Telegram username.");}
