@@ -150,13 +150,22 @@ export class Contest {
       [button('Statistics','admin:stats'),button('Find duplicate accounts','admin:duplicates')]
     ]});
   }
-  adminEntries(chat) {
-    const entries=this.state.entries.slice().sort((a,b)=>b.id-a.id).slice(0,30);
+  adminEntries(chat,offset=0) {
+    // Telegram inline keyboards are message-sized; paginate so admins can
+    // reach every entry without omitting older or hidden submissions.
+    const all=this.state.entries.slice().sort((a,b)=>b.id-a.id);
+    const pageSize=20,totalPages=Math.max(1,Math.ceil(all.length/pageSize));
+    const page=Math.min(Math.max(0,Math.floor(offset/pageSize)),totalPages-1);
+    const entries=all.slice(page*pageSize,(page+1)*pageSize);
     if(!entries.length){this.send(chat,'<b>Manage entries</b>\\nNo entries yet.',{inline_keyboard:[[button('Back to Admin Panel','admin:menu')]]});return;}
     const rows=[];
     for(const e of entries) rows.push([button('#'+e.id+' '+(e.active?'Visible':'Hidden')+' — @'+String(e.x_username||'').slice(0,15),`admin:entry:${e.id}`)]);
+    const nav=[];
+    if(page>0)nav.push(button('Previous 20','admin:entries:'+(page-1)*pageSize));
+    if(page<totalPages-1)nav.push(button('Next 20','admin:entries:'+(page+1)*pageSize));
+    if(nav.length)rows.push(nav);
     rows.push([button('Back to Admin Panel','admin:menu')]);
-    this.send(chat,'<b>Manage entries</b>\\nChoose an entry to hide, restore, publish, or get its link.',{inline_keyboard:rows});
+    this.send(chat,`<b>Manage entries</b>\\nShowing ${page*pageSize+1}–${page*pageSize+entries.length} of ${all.length} entries (including hidden).\\nChoose an entry to edit or delete it.`,{inline_keyboard:rows});
   }
   adminEntryActions(chat,id) {
     const e=this.state.entries.find(x=>x.id===id);
@@ -372,6 +381,7 @@ export class Contest {
       if(!this.isAdmin()){this.ack(id,'Organizer only.');return;}
       if(action==='admin:menu'){this.ack(id);this.adminMenu(cid);}
       else if(action==='admin:entries'){this.ack(id);this.adminEntries(cid);}
+      else if(/^admin:entries:\\d+$/.test(action)){this.ack(id);this.adminEntries(cid,Number(action.split(':')[2]));}
       else if(action==='admin:destinations'){this.ack(id);this.destinationList(cid);}
       else if(action==='admin:stats'){const active=this.standings();this.ack(id);this.send(cid,`<b>Gallery Statistics</b>\\nVisible entries: ${active.length}\\nHidden entries: ${this.state.entries.length-active.length}`,{inline_keyboard:[[button('Back to Admin Panel','admin:menu')]]});}
       else if(/^admin:entry:\d+$/.test(action)){this.ack(id);this.adminEntryActions(cid,Number(action.split(':')[2]));}
