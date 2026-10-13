@@ -270,7 +270,7 @@ export class Contest {
       if(!this.isAdmin()){this.ack(id,'Organizer only.');return;}
       if(action==='admin:add'){this.ack(id);this.startDraft(cid);} else if(action==='admin:publishall'){this.ack(id);this.publishAllMenu(cid);}
       else if(action==='admin:publishdestall'){this.ack(id);this.publishBatchMenu(cid,null);}
-      else if(/^admin:publishdest:-?\\d+$/.test(action)){const destinationId=Number(action.split(':')[2]);this.ack(id);this.publishBatchMenu(cid,destinationId);}
+      else if(/^admin:publishdest:-?\d+$/.test(action)){const destinationId=Number(action.split(':')[2]);this.ack(id);this.publishBatchMenu(cid,destinationId);}
       else if(action==='admin:cancel'){this.clearDraft();this.ack(id,'Draft canceled');this.send(cid,'Draft canceled; nothing published.');}
       else if(/^admin:publish:\d+$/.test(action)){const entryId=Number(action.split(':')[2]);this.ack(id);this.publishMenu(cid,entryId);}
       else if(/^admin:share:\d+$/.test(action)){const entryId=Number(action.split(':')[2]);this.ack(id);this.send(cid,`Share: https://t.me/${esc(this.env.JOBBY_BOT_USERNAME)}?start=m${entryId}`);}
