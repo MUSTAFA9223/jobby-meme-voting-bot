@@ -164,8 +164,13 @@ def main():
                        entry['tweet_url']]})
     print('Contest entry manifest imported; duplicate X links preserved as one entry.')
     print('Gallery database ready; entries and drafts preserved; legacy data archived.')
-    config = (ROOT / 'wrangler.jsonc').read_text().replace('REPLACE_WITH_D1_DATABASE_ID', database_id)
-    (ROOT / 'wrangler.deploy.json').write_text(config)
+    config = json.loads((ROOT / 'wrangler.jsonc').read_text().replace('REPLACE_WITH_D1_DATABASE_ID', database_id))
+    # Keep the runtime authorization list aligned with the protected GitHub
+    # secret used by this deployment, rather than a stale hard-coded ID in
+    # wrangler.jsonc. Otherwise the deploy can succeed while the organizer
+    # cannot access /add or the admin panel.
+    config.setdefault('vars', {})['JOBBY_ADMIN_IDS'] = ','.join(str(value) for value in admin_ids)
+    (ROOT / 'wrangler.deploy.json').write_text(json.dumps(config))
     wrangler('deploy', '--config', 'wrangler.deploy.json')
     print('Worker code uploaded.')
     webhook_secret = hashlib.sha256(
