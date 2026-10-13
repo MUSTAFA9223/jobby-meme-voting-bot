@@ -218,8 +218,14 @@ export class Contest {
     return true;
   }
   preview(chat) {
-    const d=this.state.draft?.data;if(this.state.draft?.step!=='confirm'){this.send(chat,'No complete draft. Use /add.');return;}
-    this.media(chat,d.media_type||'photo',d.photo_file_id,`<b>Review before publishing</b>\nName: ${esc(d.creator_name||'Not available')}\nX post: ${esc(d.tweet_url)}\nX creator: @${esc(d.x_username)}\nTelegram: @${esc(d.telegram_username||'Not available')}`,keyboard([button('✅ Publish entry','admin:confirm'),button('❌ Cancel','admin:cancel')]));
+    const d=this.state.draft?.data;
+    if(this.state.draft?.step!=='confirm'){this.send(chat,'No complete draft. Use /add.');return;}
+    const details=`<b>Review before publishing</b>\nName: ${esc(d.creator_name||'Not available')}\nX post: ${esc(d.tweet_url)}\nX creator: @${esc(d.x_username)}\nTelegram: @${esc(d.telegram_username||'Not available')}`;
+    // Keep the media preview separate from the action controls. If Telegram
+    // cannot render the media, the review details and Save/Cancel buttons still
+    // appear as a normal text message instead of looking like a lone button row.
+    this.media(chat,d.media_type||'photo',d.photo_file_id,'<b>Meme preview</b>');
+    this.send(chat,details,keyboard([button('Publish entry','admin:confirm'),button('Cancel','admin:cancel')]));
   }
   importForwarded(chat,message) {
     const forwarded=message.forward_origin||message.forward_from||message.forward_from_chat||message.is_automatic_forward;
