@@ -101,16 +101,25 @@ export class Contest {
     entries.forEach((e,i)=>{const root=find(i);if(!grouped.has(root))grouped.set(root,[]);grouped.get(root).push(e);});
     const duplicates=[...grouped.values()].filter(group=>group.length>1).sort((a,b)=>a[0].id-b[0].id);
     if(!duplicates.length){
-      this.send(chat,'<b>Duplicate participant check</b>\\nNo X or Telegram account appears on more than one entry.');
+      this.send(chat,'<b>Duplicate participant check</b>\nNo X or Telegram account appears on more than one entry.');
       return;
     }
-    this.send(chat,'<b>Duplicate participants</b>\\nEach card shows Telegram, X, and all submitted X post links for that participant.');
+    this.send(chat,'<b>Duplicate participants</b>\nEach participant has a separate, clearly ordered card.');
     for(const group of duplicates){
       const tg=[...new Set(group.map(e=>String(e.telegram_username||'').trim().replace(/^@/,'' )).filter(Boolean))];
       const xs=[...new Set(group.map(e=>String(e.x_username||'').trim().replace(/^@/,'' )).filter(Boolean))];
-      const links=[...new Map(group.filter(e=>e.tweet_url).map(e=>[e.tweet_url,e])).values()];
-      const entryLines=links.map(e=>'<a href="'+esc(e.tweet_url)+'">Entry #'+String(e.id).padStart(3,'0')+(e.active===1?'':' (hidden)')+'</a>').join('\\n');
-      const card='<b>Participant card</b>\\nTelegram: '+(tg.length?tg.map(h=>'<a href="https://t.me/'+encodeURIComponent(h)+'">@'+esc(h)+'</a>').join(', '):'Not provided')+'\\nX: '+(xs.length?xs.map(h=>'@'+esc(h)).join(', '):'Not provided')+'\\nEntries: '+group.map(e=>'#'+String(e.id).padStart(3,'0')+(e.active===1?'':' (hidden)')).join(', ')+'\\nSubmitted posts:\\n'+(entryLines||'No X links recorded');
+      const submissions=group.slice().sort((a,b)=>a.id-b.id);
+      const postLines=submissions.map((e,i)=>{
+        const number=String(e.id).padStart(3,'0');
+        const status=e.active===1?'':' (hidden)';
+        const tweet=e.tweet_url?'<a href="'+esc(e.tweet_url)+'">Open tweet</a>':'Tweet link unavailable';
+        return '<b>Participation '+(i+1)+'</b> — Entry #'+number+status+'\n'+tweet;
+      }).join('\n\n');
+      const card='<b>PARTICIPANT</b>\n'
+        +'Telegram account: '+(tg.length?tg.map(h=>'<a href="https://t.me/'+encodeURIComponent(h)+'">@'+esc(h)+'</a>').join(', '):'Not provided')+'\n'
+        +'X account: '+(xs.length?xs.map(h=>'@'+esc(h)).join(', '):'Not provided')+'\n'
+        +'Number of participations: <b>'+submissions.length+'</b>\n\n'
+        +postLines;
       this.send(chat,card);
     }
   }
