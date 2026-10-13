@@ -165,7 +165,7 @@ test('organizer chooses destination first, then publishes visible memes in batch
 
 test('second batch continues after one permanently rejected meme',async()=>{
  const {env,db}=fixture(),sent=[];
- for(let id=1;id<=20;id++)seed(db,id,'photo');
+ for(let id=1;id<=20;id++){seed(db,id,'photo');db.prepare('UPDATE entries SET photo_file_id=? WHERE id=?').run('photo-file-'+id,id);}
  db.prepare('INSERT INTO destinations(chat_id,title,chat_type,active,registered_by,updated_at) VALUES(?,?,?,?,?,?)').run(-100123,'JOBBY Community','supergroup',1,8355389673,'today');
  globalThis.fetch=async(url,opts)=>{
   const method=String(url).split('/').at(-1),payload=JSON.parse(opts.body);sent.push({method,payload});
