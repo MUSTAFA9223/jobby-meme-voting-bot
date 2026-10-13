@@ -41,6 +41,18 @@ test('admin can forward a community meme and the bot prepares every detected fie
  assert.equal((await post(env,cb(2,'admin:confirm',8355389673))).status,200);
  assert.deepEqual({...db.prepare('SELECT photo_file_id,tweet_url,x_username,telegram_username FROM entries').get()},{photo_file_id:'community-meme',tweet_url:'https://x.com/MemeArtist/status/98765',x_username:'MemeArtist',telegram_username:'memeartisttg'});
 });
+test('X-link media submission saves when no Telegram username is provided',async()=>{
+ const {env,db}=fixture(),sent=[];globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
+ const imported=mediaMessage(1,'photo','https://pbs.twimg.com/media/meme.jpg');
+ imported.message.text='https://x.com/Creator/status/123456';
+ imported.message.forward_origin={type:'user',sender_user:{id:0}};
+ assert.equal((await post(env,imported)).status,200);
+ assert.equal(db.prepare('SELECT step FROM drafts WHERE admin_id=?').get(8355389673).step,'confirm');
+ assert.equal((await post(env,cb(2,'admin:confirm',8355389673))).status,200);
+ assert.deepEqual({...db.prepare('SELECT photo_file_id,tweet_url,x_username,telegram_username FROM entries').get()},
+  {photo_file_id:'https://pbs.twimg.com/media/meme.jpg',tweet_url:'https://x.com/Creator/status/123456',x_username:'Creator',telegram_username:''});
+ assert.ok(sent.some(x=>x.method==='answerCallbackQuery'&&x.payload.text==='Entry #1 published'));
+});
 test('forward import asks only for metadata Telegram could not detect',async()=>{
  const {env,db}=fixture();globalThis.fetch=async()=>Response.json({ok:true,result:{}});
  const forwarded=mediaMessage(1,'video','community-video');forwarded.message.forward_origin={type:'user',sender_user:{id:77,username:'creatorname'}};
