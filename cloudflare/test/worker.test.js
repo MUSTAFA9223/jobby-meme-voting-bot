@@ -52,7 +52,7 @@ test('forwarded meme submission takes priority over an older open draft',async()
  await post(env,forwarded);
  const draft=db.prepare('SELECT step,data FROM drafts WHERE admin_id=?').get(8355389673);
  assert.equal(draft.step,'confirm');
- assert.deepEqual(JSON.parse(draft.data),{media_type:'video',photo_file_id:'new-community-video',forwarded_import:true,creator_name:'',tweet_url:'https://x.com/NewCreator/status/987654',x_username:'NewCreator',telegram_username:'creator_tg'});
+ assert.deepEqual(JSON.parse(draft.data),{media_type:'video',photo_file_id:'new-community-video',forwarded_import:true,tweet_url:'https://x.com/NewCreator/status/987654',x_username:'NewCreator',telegram_username:'creator_tg'});
  assert.ok(sent.some(x=>x.method==='sendMessage'&&x.payload.text?.includes('Review before publishing')&&x.payload.reply_markup?.inline_keyboard?.flat().some(b=>b.callback_data==='admin:confirm')));
 });
 
