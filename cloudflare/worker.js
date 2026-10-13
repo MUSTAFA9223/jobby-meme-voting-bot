@@ -381,7 +381,7 @@ export class Contest {
       if(!this.isAdmin()){this.ack(id,'Organizer only.');return;}
       if(action==='admin:menu'){this.ack(id);this.adminMenu(cid);}
       else if(action==='admin:entries'){this.ack(id);this.adminEntries(cid);}
-      else if(/^admin:entries:\\d+$/.test(action)){this.ack(id);this.adminEntries(cid,Number(action.split(':')[2]));}
+      else if(/^admin:entries:\d+$/.test(action)){this.ack(id);this.adminEntries(cid,Number(action.split(':')[2]));}
       else if(action==='admin:destinations'){this.ack(id);this.destinationList(cid);}
       else if(action==='admin:stats'){const active=this.standings();this.ack(id);this.send(cid,`<b>Gallery Statistics</b>\\nVisible entries: ${active.length}\\nHidden entries: ${this.state.entries.length-active.length}`,{inline_keyboard:[[button('Back to Admin Panel','admin:menu')]]});}
       else if(/^admin:entry:\d+$/.test(action)){this.ack(id);this.adminEntryActions(cid,Number(action.split(':')[2]));}
