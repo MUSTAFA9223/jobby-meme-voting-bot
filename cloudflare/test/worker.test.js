@@ -180,7 +180,7 @@ test('second batch publishes entries 11–20 in order and falls back to text for
  assert.equal(db.prepare('SELECT COUNT(*) n FROM webhook_outbox WHERE update_id=77 AND delivered=0').get().n,0);
 });
 
-test('admin duplicate report groups repeated X and Telegram accounts and lists entry numbers',async()=>{
+test('admin duplicate report renders participant cards with submitted post links',async()=>{
  const {env,db}=fixture(),sent=[];
  seed(db,1);seed(db,2);seed(db,3);
  db.prepare('UPDATE entries SET x_username=?,telegram_username=? WHERE id=?').run('RepeatX','alpha_tg',1);
@@ -189,8 +189,12 @@ test('admin duplicate report groups repeated X and Telegram accounts and lists e
  globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
  assert.equal((await post(env,message(90,'/duplicates'))).status,200);
  const report=sent.filter(x=>x.method==='sendMessage').map(x=>x.payload.text).join('\n');
- assert.match(report,/X duplicate: @repeatx/);
- assert.match(report,/Telegram duplicate: @alpha_tg/);
- assert.match(report,/#001/);assert.match(report,/#002/);assert.match(report,/#003/);
- assert.match(report,/2 memes/);
+ assert.ok(report.includes('Participant card'));
+ assert.ok(report.includes('Telegram:'));
+ assert.ok(report.includes('X:'));
+ assert.ok(report.includes('Submitted posts:'));
+ assert.ok(report.includes('Entry #001'));
+ assert.ok(report.includes('Entry #002'));
+ assert.ok(report.includes('Entry #003'));
+ assert.ok(report.includes('https://x.com/'));
 });
