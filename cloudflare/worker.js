@@ -343,12 +343,22 @@ export class Contest {
 }
 
 async function telegram(env,method,payload) {
-  let response;
-  try { response=await fetch(`https://api.telegram.org/bot${env.JOBBY_BOT_TOKEN}/${method}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(10000)}); }
-  catch { throw new Error('Telegram transport unavailable'); }
-  let data;try {data=await response.json();}catch {throw new Error('Invalid Telegram response');}
-  if(!response.ok||!data.ok) {const e=new Error('Telegram request rejected');e.code=data.error_code;e.description=data.description;throw e;}
-  return data.result;
+  // Telegram may temporarily rate-limit a large contest batch. A 429 response
+  // confirms that this request was not accepted, so retrying it is safe.
+  for(let attempt=0;attempt<3;attempt++) {
+    let response;
+    try { response=await fetch(`https://api.telegram.org/bot${env.JOBBY_BOT_TOKEN}/${method}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(10000)}); }
+    catch { throw new Error('Telegram transport unavailable'); }
+    let data;try {data=await response.json();}catch {throw new Error('Invalid Telegram response');}
+    if(response.ok&&data.ok)return data.result;
+    if((response.status===429||data.error_code===429)&&attempt<2) {
+      const retryAfter=Number(data.parameters?.retry_after)||1;
+      await new Promise(resolve=>setTimeout(resolve,Math.min(Math.max(retryAfter,1),5)*1000));
+      continue;
+    }
+    const e=new Error('Telegram request rejected');e.code=data.error_code||response.status;e.description=data.description;e.retryAfter=data.parameters?.retry_after;throw e;
+  }
+  throw new Error('Telegram rate limit retry exhausted');
 }
 
 async function deliver(env,updateId) {
