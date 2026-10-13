@@ -125,7 +125,7 @@ test('Telegram responses are delivered sequentially in outbox order',async()=>{
  globalThis.fetch=async(url,opts)=>{active++;maxActive=Math.max(maxActive,active);order.push(String(url).split('/').at(-1));await new Promise(resolve=>setTimeout(resolve,5));active--;return Response.json({ok:true,result:{}});};
  assert.equal((await post(env,cb(1,'admin:post:1:-100123',8355389673))).status,200);
  assert.equal(maxActive,1,`expected one Telegram call at a time, saw ${maxActive}`);
- assert.deepEqual(order,['answerCallbackQuery','sendPhoto','sendMessage']);
+ assert.deepEqual(order,['sendPhoto','answerCallbackQuery','sendMessage']);
  assert.equal(db.prepare('SELECT COUNT(*) n FROM webhook_outbox WHERE delivered=1').get().n,3);
 });
 test('URLs and handles reject hostile inputs and normalize official URLs',()=>{
@@ -139,7 +139,7 @@ test('organizer can publish visible memes in batches of ten to one or all connec
  seed(db,1,'photo');seed(db,2,'video');seed(db,3,'animation');db.prepare('UPDATE entries SET active=0 WHERE id=2').run();
  for(const [id,title] of [[-100123,'JOBBY Community'],[-100456,'JOBBY Channel']])db.prepare('INSERT INTO destinations(chat_id,title,chat_type,active,registered_by,updated_at) VALUES(?,?,?,?,?,?)').run(id,title,id===-100456?'channel':'supergroup',1,8355389673,'today');
  assert.equal((await post(env,message(1,'/publish all'))).status,200);
- const menu=sent.find(x=>x.method==='sendMessage'&&x.payload.text.includes('Publish every visible meme'));
+ const menu=sent.find(x=>x.method==='sendMessage'&&x.payload.text.includes('batches of 10'));
  assert.ok(menu);
  const options=menu.payload.reply_markup.inline_keyboard.flat().map(x=>x.callback_data);
  assert.ok(options.includes('admin:postbatch:-100123:0'));
