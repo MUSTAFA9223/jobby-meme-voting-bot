@@ -33,8 +33,8 @@ test('pasting an X post URL extracts its media and prepares an entry automatical
  const draft=db.prepare('SELECT step,data FROM drafts WHERE admin_id=?').get(8355389673);
  assert.equal(draft.step,'confirm');
  assert.deepEqual(JSON.parse(draft.data),{tweet_url:'https://x.com/Creator/status/123456',x_username:'Creator',media_type:'video',photo_file_id:result.url,telegram_username:''});
- assert.ok(sent.some(x=>x.method==='sendVideo'&&x.payload.video===result.url));
- assert.ok(sent.some(x=>x.method==='sendMessage'&&x.payload.text?.includes('Review before publishing')));
+ assert.ok(sent.some(x=>x.method==='sendVideo'&&x.payload.video===result.url&&x.payload.caption?.includes('Review before publishing')&&x.payload.reply_markup?.inline_keyboard?.flat().some(b=>b.callback_data==='admin:confirm')));
+ assert.ok(!sent.some(x=>x.method==='sendMessage'&&x.payload.text?.includes('Review before publishing')));
 });
 test('X media resolver rejects unrelated hosts and unsupported posts',async()=>{
  globalThis.fetch=async()=>Response.json({media_extended:[{type:'video',url:'https://evil.example/file.mp4'}]});
