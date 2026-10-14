@@ -275,6 +275,20 @@ export class Contest {
     this.media(chat,d.media_type||'photo',d.photo_file_id,'<b>Meme preview</b>');
     this.send(chat,details,keyboard([button('Publish entry','admin:confirm'),button('Cancel','admin:cancel')]));
   }
+  async importXLink(chat,message) {
+    const tweet_url=tweetFromMessage(message);
+    if(!tweet_url)return false;
+    try{
+      const media=await resolveXMedia(tweet_url);
+      const data={tweet_url,x_username:xHandleFromTweet(tweet_url),media_type:media.type,photo_file_id:media.url,telegram_username:''};
+      this.draft('confirm',data);
+      this.send(chat,'X post detected. The meme media was extracted automatically. Review it below, then publish or cancel.');
+      this.preview(chat);
+    }catch(error){
+      this.send(chat,'I found the X post, but could not extract its media automatically. The post may be private, deleted, or unsupported. Please forward the post with its media or send the image/video directly. Details: '+esc(error.message));
+    }
+    return true;
+  }
   importForwarded(chat,message) {
     const forwarded=message.forward_origin||message.forward_from||message.forward_from_chat||message.is_automatic_forward;
     if(!forwarded)return false;
@@ -484,10 +498,42 @@ export class Contest {
     // A channel forward without media is still the shortcut for connecting a channel.
     if(this.isAdmin()&&m.chat.type==='private'&&forwardedChannel&&!hasMemeMedia){this.setDestination(forwardedChannel,true);this.send(m.chat.id,`✅ Channel connected: ${esc(forwardedChannel.title||forwardedChannel.id)}. Use /publish &lt;entry number&gt; to publish an entry.`);return;}
     if(m.text?.startsWith('/'))this.command(m);
+    else if(this.isAdmin()&&m.chat.type==='private'&&!hasMemeMedia&&await this.importXLink(m.chat.id,m))return;
     else if(this.isAdmin()&&m.chat.type==='private'&&this.importForwarded(m.chat.id,m))return;
     else if(this.isAdmin()&&m.chat.type==='private'&&this.handleDraft(m.chat.id,m))return;
     else if(m.chat.type==='private')this.send(m.chat.id,'Use /start to browse the JOBBY meme gallery. Only the organizer can add entries.');
   }
+}
+
+// Resolve an X post URL to the original image/video URL before asking Telegram
+// to render the entry. X's page URL itself is not a media file and Telegram
+// cannot reliably use it as sendPhoto/sendVideo input.
+export async function resolveXMedia(tweetUrl) {
+  const normalized=normalizeTweet(tweetUrl);
+  const statusId=new URL(normalized).pathname.match(/\\/status\\/(\\d+)/)?.[1];
+  if(!statusId)throw new Error('Invalid X post URL');
+  const response=await fetch('https://api.vxtwitter.com/Twitter/status/'+statusId,{
+    headers:{'Accept':'application/json','User-Agent':'JOBBY-Meme-Gallery/1.0'},
+    signal:AbortSignal.timeout(8000)
+  });
+  if(!response.ok)throw new Error('X media resolver unavailable');
+  const data=await response.json();
+  const candidates=[
+    ...(Array.isArray(data.media_extended)?data.media_extended:[]),
+    ...(Array.isArray(data.mediaURLs)?data.mediaURLs.map(url=>({url,type:'photo'})):[]),
+    ...(Array.isArray(data.media_urls)?data.media_urls.map(url=>({url,type:'photo'})):[])
+  ];
+  for(const item of candidates){
+    const raw=typeof item==='string'?item:(item.url||item.media_url||item.src||'');
+    if(!raw)continue;
+    let url;try{url=new URL(raw);}catch{continue;}
+    if(url.protocol!=='https:'||!/(^|\\.)((twimg\\.com)|(twitter\\.com)|(vxtwitter\\.com))$/i.test(url.hostname))continue;
+    const kind=String(item.type||item.media_type||'').toLowerCase();
+    const video=kind.includes('video');
+    const gif=kind.includes('gif')||kind.includes('animated');
+    return {url:url.href,type:video?'video':gif?'animation':'photo'};
+  }
+  throw new Error('No downloadable image or video was found in that X post');
 }
 
 async function telegram(env,method,payload) {
