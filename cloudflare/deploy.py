@@ -67,6 +67,103 @@ def wrangler(*args, input_text=None):
         raise RuntimeError('Wrangler operation failed; credential-bearing output suppressed')
 
 
+
+def repair_existing_media(endpoint, admin_chat_id):
+    """Replace remote media URLs on existing gallery entries with durable Telegram file IDs."""
+    rows = cf(endpoint, {'sql': """SELECT id,photo_file_id,media_type,tweet_url
+        FROM entries WHERE photo_file_id LIKE 'https://%' ORDER BY id"""})[0]['results']
+    repaired = 0
+    failed = 0
+    for row in rows:
+        entry_id = int(row['id'])
+        try:
+            match = re.fullmatch(r'https://x\\.com/[A-Za-z0-9_]{1,15}/status/(\\d+)', row['tweet_url'] or '')
+            if not match:
+                failed += 1
+                print(f'Media repair skipped entry #{entry_id}: invalid X link.')
+                continue
+            request = urllib.request.Request(
+                'https://api.vxtwitter.com/Twitter/status/' + match.group(1),
+                headers={'Accept': 'application/json', 'User-Agent': 'JOBBY-Meme-Gallery/1.0'})
+            with urllib.request.urlopen(request, timeout=12) as response:
+                post = json.load(response)
+            candidates = []
+            for item in post.get('media_extended', []) if isinstance(post.get('media_extended'), list) else []:
+                if isinstance(item, dict):
+                    candidates.append((item.get('url') or item.get('media_url') or item.get('src') or '', str(item.get('type') or item.get('media_type') or '').lower()))
+                elif isinstance(item, str):
+                    candidates.append((item, ''))
+            for key in ('mediaURLs', 'media_urls'):
+                value = post.get(key, [])
+                if isinstance(value, list):
+                    candidates.extend((str(url), 'photo') for url in value)
+            wanted = row.get('media_type') or 'photo'
+            selected = None
+            for url, kind in candidates:
+                try:
+                    parsed = urllib.parse.urlparse(url)
+                    host = (parsed.hostname or '').lower()
+                    if parsed.scheme != 'https' or not (host == 'twimg.com' or host.endswith('.twimg.com') or host in ('twitter.com', 'vxtwitter.com') or host.endswith('.vxtwitter.com')):
+                        continue
+                    is_video = 'video' in kind
+                    is_animation = 'gif' in kind or 'animated' in kind
+                    if (wanted == 'video' and is_video) or (wanted == 'animation' and is_animation) or (wanted == 'photo' and not is_video and not is_animation):
+                        selected = (url, wanted)
+                        break
+                    if selected is None:
+                        selected = (url, 'video' if is_video else 'animation' if is_animation else 'photo')
+                except Exception:
+                    continue
+            if not selected:
+                raise RuntimeError('no media URL')
+            media_url, media_type = selected
+            media_request = urllib.request.Request(media_url, headers={
+                'User-Agent': 'Mozilla/5.0 JOBBY-Meme-Gallery/1.0', 'Accept': '*/*'})
+            with urllib.request.urlopen(media_request, timeout=20) as response:
+                content_type = (response.headers.get('Content-Type') or '').split(';')[0].lower()
+                blob = response.read(50 * 1024 * 1024 + 1)
+            if not blob or len(blob) > 50 * 1024 * 1024:
+                raise RuntimeError('media size unsupported')
+            if not (content_type.startswith('image/') or content_type.startswith('video/')):
+                raise RuntimeError('unsupported media type')
+            method, field = {
+                'photo': ('sendPhoto', 'photo'),
+                'video': ('sendVideo', 'video'),
+                'animation': ('sendAnimation', 'animation')
+            }[media_type]
+            ext = 'jpg' if content_type in ('image/jpeg', 'image/jpg') else 'png' if content_type == 'image/png' else 'gif' if content_type == 'image/gif' else 'mp4' if content_type == 'video/mp4' else 'bin'
+            boundary = '----JOBBYRepairBoundary7MA4YWxkTrZu0gW'
+            fields = [('chat_id', str(admin_chat_id)), ('caption', f'Media repair for entry #{entry_id}')]
+            parts = []
+            for name, value in fields:
+                parts.append((f'--{boundary}\\r\\nContent-Disposition: form-data; name="{name}"\\r\\n\\r\\n{value}\\r\\n').encode())
+            parts.append((f'--{boundary}\\r\\nContent-Disposition: form-data; name="{field}"; filename="jobby-entry-{entry_id}.{ext}"\\r\\nContent-Type: {content_type}\\r\\n\\r\\n').encode() + blob + b'\\r\\n')
+            body = b''.join(parts) + f'--{boundary}--\\r\\n'.encode()
+            upload_request = urllib.request.Request(
+                'https://api.telegram.org/bot' + BOT_TOKEN + '/' + method,
+                data=body, headers={'Content-Type': 'multipart/form-data; boundary=' + boundary})
+            with urllib.request.urlopen(upload_request, timeout=35) as response:
+                result = json.load(response)
+            if not result.get('ok'):
+                raise RuntimeError('Telegram rejected media')
+            message = result['result']
+            file_id = (message.get('photo') or [{}])[-1].get('file_id') if media_type == 'photo' else message.get('video', {}).get('file_id') if media_type == 'video' else message.get('animation', {}).get('file_id')
+            if not file_id:
+                raise RuntimeError('Telegram returned no file ID')
+            cf(endpoint, {'sql': 'UPDATE entries SET photo_file_id=?,media_type=? WHERE id=? AND photo_file_id=?',
+                'params': [file_id, media_type, entry_id, row['photo_file_id']]})
+            try:
+                telegram('deleteMessage', {'chat_id': admin_chat_id, 'message_id': message['message_id']})
+            except Exception:
+                pass
+            repaired += 1
+        except Exception:
+            failed += 1
+            print(f'Media repair could not restore entry #{entry_id}; original entry preserved.')
+    print(f'Existing media repair complete: {repaired} repaired, {failed} unresolved, {len(rows)} checked.')
+    return repaired, failed
+
+
 def main():
     global ACCOUNT
     accounts = cf_api('https://api.cloudflare.com/client/v4/accounts?per_page=100')
@@ -163,6 +260,7 @@ def main():
                        admin_ids[0], time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
                        entry['tweet_url']]})
     print('Contest entry manifest imported; duplicate X links preserved as one entry.')
+    repair_existing_media(endpoint, admin_ids[0])
     print('Gallery database ready; entries and drafts preserved; legacy data archived.')
     config = json.loads((ROOT / 'wrangler.jsonc').read_text().replace('REPLACE_WITH_D1_DATABASE_ID', database_id))
     # Keep the runtime authorization list aligned with the protected GitHub
