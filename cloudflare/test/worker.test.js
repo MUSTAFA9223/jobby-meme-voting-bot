@@ -27,7 +27,7 @@ test('pasting an X post URL extracts its media and prepares an entry automatical
  };
  const result=await resolveXMedia('https://x.com/Creator/status/123456');
  assert.equal(result.type,'video');
- assert.match(result.url,/video\\.twimg\\.com/);
+ assert.ok(result.url.includes('video.twimg.com'));
  const u=message(1,'https://x.com/Creator/status/123456');
  assert.equal((await post(env,u)).status,200);
  const draft=db.prepare('SELECT step,data FROM drafts WHERE admin_id=?').get(8355389673);
