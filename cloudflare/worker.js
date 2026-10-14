@@ -542,6 +542,48 @@ export async function resolveXMedia(tweetUrl) {
   throw new Error('No downloadable image or video was found in that X post');
 }
 
+async function telegramMedia(env,method,payload) {
+  const field={sendPhoto:'photo',sendVideo:'video',sendAnimation:'animation'}[method];
+  const source=payload[field];
+  if(!field||typeof source!=='string'||!source.startsWith('https://'))return telegram(env,method,payload);
+  // Telegram's URL fetcher can fail on X CDN URLs even when the resolver finds
+  // a valid asset. Download the actual bytes in the Worker and upload multipart.
+  try {
+    const mediaResponse=await fetch(source,{headers:{'User-Agent':'Mozilla/5.0 JOBBY-Meme-Gallery/1.0','Accept':'*/*'},signal:AbortSignal.timeout(15000)});
+    if(!mediaResponse.ok)throw new Error('Media download failed');
+    const contentType=(mediaResponse.headers.get('content-type')||'').toLowerCase();
+    if(!contentType.startsWith('image/')&&!contentType.startsWith('video/'))throw new Error('Unsupported media content type');
+    const blob=await mediaResponse.blob();
+    if(!blob.size||blob.size>49*1024*1024)throw new Error('Media file is empty or too large for Telegram upload');
+    const form=new FormData();
+    for(const [key,value] of Object.entries(payload)){
+      if(key===field)continue;
+      if(value!==undefined&&value!==null)form.append(key,typeof value==='string'?value:JSON.stringify(value));
+    }
+    const ext=contentType.includes('png')?'png':contentType.includes('webp')?'webp':contentType.includes('gif')?'gif':contentType.includes('jpeg')?'jpg':contentType.includes('mp4')?'mp4':'bin';
+    form.append(field,blob,`jobby-media.${ext}`);
+    return await telegramForm(env,method,form);
+  } catch(error) {
+    // Fall back to Telegram's native URL fetch for CDN hosts that reject Worker downloads.
+    return telegram(env,method,payload);
+  }
+}
+async function telegramForm(env,method,form) {
+  for(let attempt=0;attempt<3;attempt++) {
+    let response;
+    try {response=await fetch(`https://api.telegram.org/bot${env.JOBBY_BOT_TOKEN}/${method}`,{method:'POST',body:form,signal:AbortSignal.timeout(20000)});}
+    catch {throw new Error('Telegram media upload transport unavailable');}
+    let data;try{data=await response.json();}catch{throw new Error('Invalid Telegram media upload response');}
+    if(response.ok&&data.ok)return data.result;
+    if((response.status===429||data.error_code===429)&&attempt<2){
+      const retryAfter=Number(data.parameters?.retry_after)||1;
+      await new Promise(resolve=>setTimeout(resolve,Math.min(Math.max(retryAfter,1),5)*1000));
+      continue;
+    }
+    const e=new Error('Telegram media upload rejected');e.code=data.error_code||response.status;e.description=data.description;e.retryAfter=data.parameters?.retry_after;throw e;
+  }
+  throw new Error('Telegram media upload rate limit retry exhausted');
+}
 async function telegram(env,method,payload) {
   // Telegram may temporarily rate-limit a large contest batch. A 429 response
   // confirms that this request was not accepted, so retrying it is safe.
@@ -568,7 +610,7 @@ async function deliver(env,updateId) {
   for(let i=0;i<pending.results.length;i++) {
     const row=pending.results[i],payload=JSON.parse(row.payload);
     try {
-      const delivered=await telegram(env,row.method,payload);
+      const delivered=['sendPhoto','sendVideo','sendAnimation'].includes(row.method)?await telegramMedia(env,row.method,payload):await telegram(env,row.method,payload);
       const caption=payload.caption||payload.media?.caption||'';
       const stableEntryId=payload.reply_markup?.inline_keyboard?.flat()?.map(b=>b.callback_data||b.url||'').map(v=>String(v).match(/(?:open:|start=m)(\d+)/)?.[1]).find(Boolean);
       const entryMatch=stableEntryId?String(stableEntryId).match(/\d+/):String(caption).match(/JOBBY MEME ENTRY — #(\d+)/);
