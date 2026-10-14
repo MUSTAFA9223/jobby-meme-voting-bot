@@ -77,7 +77,7 @@ def repair_existing_media(endpoint, admin_chat_id):
     for row in rows:
         entry_id = int(row['id'])
         try:
-            match = re.fullmatch(r'https://x\\.com/[A-Za-z0-9_]{1,15}/status/(\\d+)', row['tweet_url'] or '')
+            match = re.fullmatch(r'https://x\.com/[A-Za-z0-9_]{1,15}/status/(\d+)', row['tweet_url'] or '')
             if not match:
                 failed += 1
                 print(f'Media repair skipped entry #{entry_id}: invalid X link.')
@@ -136,9 +136,9 @@ def repair_existing_media(endpoint, admin_chat_id):
             fields = [('chat_id', str(admin_chat_id)), ('caption', f'Media repair for entry #{entry_id}')]
             parts = []
             for name, value in fields:
-                parts.append((f'--{boundary}\\r\\nContent-Disposition: form-data; name="{name}"\\r\\n\\r\\n{value}\\r\\n').encode())
-            parts.append((f'--{boundary}\\r\\nContent-Disposition: form-data; name="{field}"; filename="jobby-entry-{entry_id}.{ext}"\\r\\nContent-Type: {content_type}\\r\\n\\r\\n').encode() + blob + b'\\r\\n')
-            body = b''.join(parts) + f'--{boundary}--\\r\\n'.encode()
+                parts.append((f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n').encode())
+            parts.append((f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"; filename="jobby-entry-{entry_id}.{ext}"\r\nContent-Type: {content_type}\r\n\r\n').encode() + blob + b'\r\n')
+            body = b''.join(parts) + f'--{boundary}--\r\n'.encode()
             upload_request = urllib.request.Request(
                 'https://api.telegram.org/bot' + BOT_TOKEN + '/' + method,
                 data=body, headers={'Content-Type': 'multipart/form-data; boundary=' + boundary})
