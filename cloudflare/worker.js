@@ -498,7 +498,7 @@ export class Contest {
     // A channel forward without media is still the shortcut for connecting a channel.
     if(this.isAdmin()&&m.chat.type==='private'&&forwardedChannel&&!hasMemeMedia){this.setDestination(forwardedChannel,true);this.send(m.chat.id,`✅ Channel connected: ${esc(forwardedChannel.title||forwardedChannel.id)}. Use /publish &lt;entry number&gt; to publish an entry.`);return;}
     if(m.text?.startsWith('/'))this.command(m);
-    else if(this.isAdmin()&&m.chat.type==='private'&&!hasMemeMedia&&await this.importXLink(m.chat.id,m))return;
+    else if(this.isAdmin()&&m.chat.type==='private'&&!hasMemeMedia&&!m.forward_origin&&!m.forward_from&&!m.forward_from_chat&&!m.is_automatic_forward&&await this.importXLink(m.chat.id,m))return;
     else if(this.isAdmin()&&m.chat.type==='private'&&this.importForwarded(m.chat.id,m))return;
     else if(this.isAdmin()&&m.chat.type==='private'&&this.handleDraft(m.chat.id,m))return;
     else if(m.chat.type==='private')this.send(m.chat.id,'Use /start to browse the JOBBY meme gallery. Only the organizer can add entries.');
