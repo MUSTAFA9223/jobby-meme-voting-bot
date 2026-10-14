@@ -59,8 +59,9 @@ test('admin can forward a community meme and the bot prepares every detected fie
  assert.equal(draft.step,'confirm');
  assert.deepEqual(JSON.parse(draft.data),{media_type:'photo',photo_file_id:'community-meme',forwarded_import:true,tweet_url:'https://x.com/MemeArtist/status/98765',x_username:'MemeArtist',telegram_username:'memeartisttg'});
  assert.ok(sent.some(x=>x.payload.text?.includes('Telegram username is optional')));
- assert.ok(sent.some(x=>x.method==='sendPhoto'&&x.payload.caption?.includes('Meme preview')&&!x.payload.reply_markup));
- assert.ok(sent.some(x=>x.method==='sendMessage'&&x.payload.text?.includes('@memeartisttg')&&x.payload.reply_markup?.inline_keyboard?.flat().some(b=>b.callback_data==='admin:confirm')));
+ assert.ok(sent.some(x=>x.method==='sendPhoto'&&x.payload.caption?.includes('Review before publishing')&&x.payload.caption?.includes('@memeartisttg')&&x.payload.reply_markup?.inline_keyboard?.flat().some(b=>b.callback_data==='admin:confirm')));
+ assert.ok(!sent.some(x=>(x.method==='sendPhoto'||x.method==='sendVideo')&&x.payload.caption?.includes('Meme preview')));
+ assert.ok(!sent.some(x=>x.method==='sendMessage'&&x.payload.text?.includes('@memeartisttg')&&x.payload.reply_markup?.inline_keyboard?.flat().some(b=>b.callback_data==='admin:confirm')));
  assert.equal((await post(env,cb(2,'admin:confirm',8355389673))).status,200);
  assert.deepEqual({...db.prepare('SELECT photo_file_id,tweet_url,x_username,telegram_username FROM entries').get()},{photo_file_id:'community-meme',tweet_url:'https://x.com/MemeArtist/status/98765',x_username:'MemeArtist',telegram_username:'memeartisttg'});
 });
@@ -75,7 +76,7 @@ test('forwarded meme submission takes priority over an older open draft',async()
  const draft=db.prepare('SELECT step,data FROM drafts WHERE admin_id=?').get(8355389673);
  assert.equal(draft.step,'confirm');
  assert.deepEqual(JSON.parse(draft.data),{media_type:'video',photo_file_id:'new-community-video',forwarded_import:true,tweet_url:'https://x.com/NewCreator/status/987654',x_username:'NewCreator',telegram_username:'creator_tg'});
- assert.ok(sent.some(x=>x.method==='sendMessage'&&x.payload.text?.includes('Review before publishing')&&x.payload.reply_markup?.inline_keyboard?.flat().some(b=>b.callback_data==='admin:confirm')));
+ assert.ok(sent.some(x=>x.method==='sendVideo'&&x.payload.caption?.includes('Review before publishing')&&x.payload.reply_markup?.inline_keyboard?.flat().some(b=>b.callback_data==='admin:confirm')));
 });
 
 test('forwarded channel media is imported as a meme instead of only connecting the channel',async()=>{
@@ -90,7 +91,7 @@ test('forwarded channel media is imported as a meme instead of only connecting t
  assert.equal(JSON.parse(draft.data).photo_file_id,'channel-meme');
  assert.equal(JSON.parse(draft.data).x_username,'ChannelCreator');
  assert.equal(db.prepare('SELECT COUNT(*) n FROM destinations').get().n,0);
- assert.ok(sent.some(x=>x.method==='sendMessage'&&x.payload.text?.includes('Review before publishing')));
+ assert.ok(sent.some(x=>x.method==='sendPhoto'&&x.payload.caption?.includes('Review before publishing')&&x.payload.reply_markup?.inline_keyboard?.flat().some(b=>b.callback_data==='admin:confirm')));
 });
 
 test('X-link media submission saves when no Telegram username is provided',async()=>{
