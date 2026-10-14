@@ -510,7 +510,7 @@ export class Contest {
 // cannot reliably use it as sendPhoto/sendVideo input.
 export async function resolveXMedia(tweetUrl) {
   const normalized=normalizeTweet(tweetUrl);
-  const statusId=new URL(normalized).pathname.match(/\\/status\\/(\\d+)/)?.[1];
+  const statusId=new URL(normalized).pathname.split('/status/')[1]?.split('/')[0];
   if(!statusId)throw new Error('Invalid X post URL');
   const response=await fetch('https://api.vxtwitter.com/Twitter/status/'+statusId,{
     headers:{'Accept':'application/json','User-Agent':'JOBBY-Meme-Gallery/1.0'},
@@ -527,7 +527,7 @@ export async function resolveXMedia(tweetUrl) {
     const raw=typeof item==='string'?item:(item.url||item.media_url||item.src||'');
     if(!raw)continue;
     let url;try{url=new URL(raw);}catch{continue;}
-    if(url.protocol!=='https:'||!/(^|\\.)((twimg\\.com)|(twitter\\.com)|(vxtwitter\\.com))$/i.test(url.hostname))continue;
+    const allowedHost=['twimg.com','twitter.com','vxtwitter.com'].some(domain=>url.hostname===domain||url.hostname.endsWith('.'+domain));\n    if(url.protocol!=='https:'||!allowedHost)continue;
     const kind=String(item.type||item.media_type||'').toLowerCase();
     const video=kind.includes('video');
     const gif=kind.includes('gif')||kind.includes('animated');
