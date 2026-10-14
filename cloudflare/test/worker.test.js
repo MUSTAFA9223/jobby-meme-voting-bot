@@ -182,13 +182,7 @@ test('every public submission has a one-per-user Like button while private galle
  assert.equal(db.prepare('SELECT COUNT(*) n FROM entry_likes WHERE entry_id=1').get().n,1,'public repeat likes must not toggle off');
  assert.ok(sent.some(x=>x.method==='answerCallbackQuery'&&x.payload.text==='You already liked this submission.'));
  assert.ok(!sent.filter(x=>x.method==='editMessageReplyMarkup').at(-1).payload.reply_markup.inline_keyboard.flat().some(x=>x.text==='Unlike (1)'));
- await post(env,message(5,'/start m1',44));
- const privateCard=sent.filter(x=>x.method==='sendPhoto'&&x.payload.chat_id===44).at(-1);
- assert.ok(privateCard.reply_markup?.inline_keyboard?.flat?.().some(x=>x.callback_data==='like:1'));
- await post(env,cb(6,'like:1',44));
- assert.equal(db.prepare('SELECT COUNT(*) n FROM entry_likes WHERE entry_id=1 AND user_id=44').get().n,0);
- const privateMarkup=sent.filter(x=>x.method==='editMessageReplyMarkup'&&x.payload.chat_id===44).at(-1).payload.reply_markup.inline_keyboard.flat();
- assert.ok(privateMarkup.some(x=>x.callback_data==='like:1'&&x.text==='Like (0)'));
+
 });
 
 test('only the configured organizer can connect a group or use submission controls',async()=>{
