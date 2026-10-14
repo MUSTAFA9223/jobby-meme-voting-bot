@@ -63,12 +63,16 @@ export class Contest {
     const queries = [
       'SELECT * FROM entries',
       'SELECT key,value FROM config', 'SELECT * FROM drafts WHERE admin_id=?',
-      'SELECT * FROM destinations WHERE active=1 ORDER BY title,chat_id'
+      'SELECT * FROM destinations WHERE active=1 ORDER BY title,chat_id',
+      'SELECT entry_id,COUNT(*) AS count FROM entry_likes GROUP BY entry_id',
+      'SELECT entry_id FROM entry_likes WHERE user_id=?'
     ];
-    const result = await env.DB.batch(queries.map((q,i) => i < 2 || i === 3 ? env.DB.prepare(q) : env.DB.prepare(q).bind(userId)));
+    const result = await env.DB.batch(queries.map((q,i) => i < 2 || i === 3 || i === 4 ? env.DB.prepare(q) : env.DB.prepare(q).bind(userId)));
     return new Contest(env, {entries: result[0].results, config: Object.fromEntries(result[1].results.map(r=>[r.key,r.value])),
       draft: result[2].results[0] ? {step:result[2].results[0].step,data:JSON.parse(result[2].results[0].data)} : null,
-      destinations:result[3].results}, userId);
+      destinations:result[3].results,
+      likeCounts:Object.fromEntries(result[4].results.map(r=>[r.entry_id,r.count])),
+      userLikes:new Set(result[5].results.map(r=>r.entry_id))}, userId);
   }
   write(sql, ...args) { this.sql.push(this.env.DB.prepare(sql).bind(...args)); }
   api(method, payload) { this.responses.push({method,payload}); }
@@ -200,13 +204,15 @@ export class Contest {
     const ids=this.ids(), i=ids.indexOf(e.id), before=ids[(i-1+ids.length)%ids.length], after=ids[(i+1)%ids.length];
     const creators=[link('X creator',`https://x.com/${e.x_username}`)];
     if(e.telegram_username)creators.push(link('Telegram creator',`https://t.me/${e.telegram_username}`));
-    return keyboard([link('🐦 View original post on X',e.tweet_url)],creators,
-      [button('◀ Previous',`nav:${before}`),button('🖼 Gallery','menu:entries'),button('Next ▶',`nav:${after}`)]);
+    return keyboard([link('View original post on X',e.tweet_url)],creators,
+      [button('Previous',`nav:${before}`),button('Gallery','menu:entries'),button('Next',`nav:${after}`)],
+      [button(`${this.state.userLikes?.has(e.id)?'Unlike':'Like'} (${this.state.likeCounts?.[e.id]||0})`,`like:${e.id}`)]);
   }
   publicKeyboard(e) {
     const creators=[link('X creator',`https://x.com/${e.x_username}`)];
     if(e.telegram_username)creators.push(link('Telegram creator',`https://t.me/${e.telegram_username}`));
-    return keyboard([link('🐦 View original post on X',e.tweet_url)],creators,[link('🖼 Open full gallery',`https://t.me/${this.env.JOBBY_BOT_USERNAME}?start=m${e.id}`)]);
+    return keyboard([link('View original post on X',e.tweet_url)],creators,[link('Open full gallery',`https://t.me/${this.env.JOBBY_BOT_USERNAME}?start=m${e.id}`)],
+      [button(`Like (${this.state.likeCounts?.[e.id]||0})`,`like:${e.id}`)]);
   }
   show(chat,id,origin) {
     const e=this.entry(id); if(!e) {this.send(chat,'That entry is not available.');return;}
@@ -389,6 +395,25 @@ export class Contest {
     const chat=c.message?.chat,id=c.id,action=c.data||'',cid=chat?.id;
     if(!cid){this.ack(id,'Message unavailable.');return;}
     const privateChat=chat.type==='private';
+    const likeAction=action.match(/^like:(\\d+)$/);
+    if(likeAction){
+      const entryId=Number(likeAction[1]),entry=this.entry(entryId);
+      if(!entry){this.ack(id,'Submission unavailable.');return;}
+      const existing=await this.env.DB.prepare('SELECT entry_id FROM entry_likes WHERE entry_id=? AND user_id=?').bind(entryId,this.userId).first();
+      if(existing){
+        this.write('DELETE FROM entry_likes WHERE entry_id=? AND user_id=?',entryId,this.userId);
+        this.state.userLikes?.delete(entryId);
+        this.state.likeCounts[entryId]=Math.max(0,(this.state.likeCounts[entryId]||0)-1);
+      } else {
+        this.write('INSERT OR IGNORE INTO entry_likes(entry_id,user_id,created_at) VALUES(?,?,?)',entryId,this.userId,now());
+        this.state.userLikes?.add(entryId);
+        this.state.likeCounts[entryId]=(this.state.likeCounts[entryId]||0)+1;
+      }
+      const rows=(c.message.reply_markup?.inline_keyboard||[]).map(row=>row.map(b=>b.callback_data===action?{...b,text:`${existing?'Like':'Unlike'} (${this.state.likeCounts[entryId]||0})`}:b));
+      this.api('editMessageReplyMarkup',{chat_id:cid,message_id:c.message.message_id,reply_markup:{inline_keyboard:rows}});
+      this.ack(id,existing?'Like removed':'Liked');
+      return;
+    }
     if(!privateChat){this.ack(id,'Open the bot private chat for this action.');return;}
     if(action==='menu:entries'){this.ack(id);this.browse(cid);return;}
     if(action==='menu:about'){this.ack(id);this.about(cid);return;}
@@ -654,6 +679,7 @@ export default {
     let u;try {const raw=await request.text();if(raw.length>1048576)return new Response('Too large',{status:413});u=JSON.parse(raw);}catch{return new Response('Invalid JSON',{status:400});}
     if(!Number.isSafeInteger(u.update_id)||u.update_id<0)return new Response('Invalid update',{status:400});
     try {
+      await env.DB.prepare('CREATE TABLE IF NOT EXISTS entry_likes (entry_id INTEGER NOT NULL, user_id INTEGER NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (entry_id,user_id))').run();
       const seen=await env.DB.prepare('SELECT completed FROM webhook_updates WHERE update_id=?').bind(u.update_id).first();
       if(seen?.completed)return new Response('OK');
       if(!seen){
