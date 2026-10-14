@@ -105,7 +105,7 @@ def repair_existing_media(endpoint, admin_chat_id):
                     host = (parsed.hostname or '').lower()
                     if parsed.scheme != 'https' or not (host == 'twimg.com' or host.endswith('.twimg.com') or host in ('twitter.com', 'vxtwitter.com') or host.endswith('.vxtwitter.com')):
                         continue
-                    is_video = 'video' in kind
+                    is_video = 'video' in kind or host.startswith('video.twimg.com') or '.mp4' in parsed.path.lower()
                     is_animation = 'gif' in kind or 'animated' in kind
                     if (wanted == 'video' and is_video) or (wanted == 'animation' and is_animation) or (wanted == 'photo' and not is_video and not is_animation):
                         selected = (url, wanted)
