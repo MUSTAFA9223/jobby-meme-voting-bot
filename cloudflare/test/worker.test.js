@@ -2,7 +2,7 @@ import {test,afterEach} from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
-import worker,{normalizeTweet,normalizeHandle} from '../worker.js';
+import worker,{normalizeTweet,normalizeHandle,resolveXMedia} from '../worker.js';
 
 const originalFetch=globalThis.fetch;
 afterEach(()=>{globalThis.fetch=originalFetch;});
@@ -18,6 +18,28 @@ const cb=(id,data,user=44)=>({update_id:id,callback_query:{id:String(id),data,fr
 const groupCb=(id,data,type='photo',user=44)=>({update_id:id,callback_query:{id:String(id),data,from:{id:user,username:'voter'},message:{message_id:99,chat:{id:-100123,type:'supergroup',title:'JOBBY Community'},[type]:type==='photo'?[{file_id:'public'}]:{file_id:'public'}}}});
 const membership=(id,chatId,title,type,status='administrator',user=8355389673)=>({update_id:id,my_chat_member:{from:{id:user},chat:{id:chatId,title,type},new_chat_member:{status}}});
 function seed(db,id=1,type='photo'){db.prepare('INSERT INTO entries(id,photo_file_id,media_type,tweet_url,x_username,telegram_username,created_by,created_at) VALUES(?,?,?,?,?,?,?,?)').run(id,`${type}-file`,type,`https://x.com/creator/status/${id}`,'creator','creatorname',8355389673,'today');}
+test('pasting an X post URL extracts its media and prepares an entry automatically',async()=>{
+ const {env,db}=fixture(),sent=[];
+ globalThis.fetch=async(url,opts)=>{
+  if(String(url).includes('api.vxtwitter.com'))return Response.json({media_extended:[{type:'video',url:'https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/1280x720/clip.mp4?tag=12'}]});
+  sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});
+  return Response.json({ok:true,result:{}});
+ };
+ const result=await resolveXMedia('https://x.com/Creator/status/123456');
+ assert.equal(result.type,'video');
+ assert.ok(result.url.includes('video.twimg.com'));
+ const u=message(1,'https://x.com/Creator/status/123456');
+ assert.equal((await post(env,u)).status,200);
+ const draft=db.prepare('SELECT step,data FROM drafts WHERE admin_id=?').get(8355389673);
+ assert.equal(draft.step,'confirm');
+ assert.deepEqual(JSON.parse(draft.data),{tweet_url:'https://x.com/Creator/status/123456',x_username:'Creator',media_type:'video',photo_file_id:result.url,telegram_username:''});
+ assert.ok(sent.some(x=>x.method==='sendVideo'&&x.payload.video===result.url));
+ assert.ok(sent.some(x=>x.method==='sendMessage'&&x.payload.text?.includes('Review before publishing')));
+});
+test('X media resolver rejects unrelated hosts and unsupported posts',async()=>{
+ globalThis.fetch=async()=>Response.json({media_extended:[{type:'video',url:'https://evil.example/file.mp4'}]});
+ await assert.rejects(()=>resolveXMedia('https://x.com/Creator/status/123456'),/No downloadable image or video/);
+});
 test('unauthenticated requests cannot write; malformed updates are rejected',async()=>{
  const {env,db}=fixture();assert.equal((await post(env,message(1,'/pause'),'wrong')).status,403);assert.equal((await post(env,{update_id:'1'})).status,400);assert.equal(db.prepare('SELECT COUNT(*) n FROM webhook_updates').get().n,0);
 });
