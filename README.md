@@ -1,6 +1,6 @@
 # JOBBY Meme Gallery Bot
 
-An admin-curated Telegram gallery for JOBBY meme entries. The organizer adds each image, video, or GIF together with its original X post, X username, and Telegram username. Visitors can browse entries and open the supplied creator links. There is no voting, rating, ranking, or public editing.
+An admin-curated Telegram gallery for JOBBY meme entries. The organizer adds each image, video, or GIF together with its original X post, X username, and Telegram username. Visitors can browse entries, open creator links, and press one Like button under each submission. Each Telegram user can like or remove their like; the total is shown on the button.
 
 ## Features
 
@@ -8,7 +8,7 @@ An admin-curated Telegram gallery for JOBBY meme entries. The organizer adds eac
 - Previous/next browsing and private entry share links.
 - Admin-only add, publish, hide, restore, destination registration, and statistics.
 - Admin fast import: forward a participant's community message to the bot to detect its media, original X link, X username, and Telegram username, then confirm the prepared entry.
-- Publishing to registered groups and channels without interactive public controls.
+- Publishing to registered groups and channels with one public Like button under each submission.
 - Cloudflare Worker webhook deployment with D1 persistence and idempotent Telegram delivery.
 - GitHub-only polling fallback with encrypted state.
 
@@ -16,8 +16,8 @@ An admin-curated Telegram gallery for JOBBY meme entries. The organizer adds eac
 
 - Only Telegram IDs in `JOBBY_ADMIN_IDS` can change gallery contents.
 - Bot, webhook, Cloudflare, and state-encryption secrets stay outside repository files and logs.
-- Public users can only browse and open links.
-- Existing legacy vote/rating database rows are retained only to avoid destructive data loss; the application never reads or writes them.
+- Public users can browse, open links, and like/unlike each submission once per Telegram account.
+- Like records are stored in D1 and do not change entry order or winner selection.
 
 ## User commands
 
