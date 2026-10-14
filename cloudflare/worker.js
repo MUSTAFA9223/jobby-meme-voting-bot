@@ -270,10 +270,9 @@ export class Contest {
     if(this.state.draft?.step!=='confirm'){this.send(chat,'No complete draft. Use /add.');return;}
     const details=`<b>Review before publishing</b>\nName: ${esc(d.creator_name||'Not available')}\nX post: ${esc(d.tweet_url)}\nX creator: @${esc(d.x_username)}\nTelegram: @${esc(d.telegram_username||'Not available')}`;
     const actions=keyboard([button('Publish entry','admin:confirm'),button('Cancel','admin:cancel')]);
-    // For a pasted X link, keep the extracted full-size video/photo and review
-    // details in one Telegram media card, with the action buttons attached to it.
-    // Forwarded submissions retain the existing two-message review flow.
-    if(d.x_media_import){
+    // Keep forwarded submissions and X-link imports in one media card:
+    // the video/photo, review details, and Publish/Cancel buttons must travel together.
+    if(d.x_media_import||d.forwarded_import){
       this.media(chat,d.media_type||'photo',d.photo_file_id,details,actions);
     }else{
       this.media(chat,d.media_type||'photo',d.photo_file_id,'<b>Meme preview</b>');
