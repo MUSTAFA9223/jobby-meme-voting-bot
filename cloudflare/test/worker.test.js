@@ -165,7 +165,7 @@ test('connected groups and channels receive gallery posts with only a like contr
  assert.ok(!/Votes|Rating|vote|rate/i.test(published.payload.caption));
 });
 
-test('each submission has one persistent like button that toggles per Telegram user',async()=>{
+test('every public submission has a one-per-user Like button while private gallery likes can toggle',async()=>{
  const {env,db}=fixture(),sent=[];seed(db,1);
  globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
  await post(env,membership(1,-100123,'JOBBY Community','supergroup'));
@@ -176,12 +176,19 @@ test('each submission has one persistent like button that toggles per Telegram u
  assert.equal(likeButton.text,'Like (0)');
  await post(env,groupCb(3,'like:1','photo',44));
  assert.equal(db.prepare('SELECT COUNT(*) n FROM entry_likes WHERE entry_id=1').get().n,1);
- const likedMarkup=sent.filter(x=>x.method==='editMessageReplyMarkup').at(-1).payload.reply_markup.inline_keyboard.flat();
- assert.ok(likedMarkup.some(x=>x.callback_data==='like:1'&&x.text==='Unlike (1)'));
+ let likedMarkup=sent.filter(x=>x.method==='editMessageReplyMarkup').at(-1).payload.reply_markup.inline_keyboard.flat();
+ assert.ok(likedMarkup.some(x=>x.callback_data==='like:1'&&x.text==='Like (1)'));
  await post(env,groupCb(4,'like:1','photo',44));
- assert.equal(db.prepare('SELECT COUNT(*) n FROM entry_likes WHERE entry_id=1').get().n,0);
- const unlikedMarkup=sent.filter(x=>x.method==='editMessageReplyMarkup').at(-1).payload.reply_markup.inline_keyboard.flat();
- assert.ok(unlikedMarkup.some(x=>x.callback_data==='like:1'&&x.text==='Like (0)'));
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM entry_likes WHERE entry_id=1').get().n,1,'public repeat likes must not toggle off');
+ assert.ok(sent.some(x=>x.method==='answerCallbackQuery'&&x.payload.text==='You already liked this submission.'));
+ assert.ok(!sent.filter(x=>x.method==='editMessageReplyMarkup').at(-1).payload.reply_markup.inline_keyboard.flat().some(x=>x.text==='Unlike (1)'));
+ await post(env,cb(5,'open:1',44));
+ const privateCard=sent.filter(x=>x.method==='sendPhoto'&&x.payload.chat_id===44).at(-1);
+ assert.ok(privateCard.reply_markup?.inline_keyboard?.flat?.().some(x=>x.callback_data==='like:1'));
+ await post(env,cb(6,'like:1',44));
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM entry_likes WHERE entry_id=1 AND user_id=44').get().n,0);
+ const privateMarkup=sent.filter(x=>x.method==='editMessageReplyMarkup'&&x.payload.chat_id===44).at(-1).payload.reply_markup.inline_keyboard.flat();
+ assert.ok(privateMarkup.some(x=>x.callback_data==='like:1'&&x.text==='Like (0)'));
 });
 
 test('only the configured organizer can connect a group or use submission controls',async()=>{
