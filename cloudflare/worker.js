@@ -395,7 +395,7 @@ export class Contest {
     const chat=c.message?.chat,id=c.id,action=c.data||'',cid=chat?.id;
     if(!cid){this.ack(id,'Message unavailable.');return;}
     const privateChat=chat.type==='private';
-    const likeAction=action.match(/^like:(\\d+)$/);
+    const likeAction=action.match(/^like:(\d+)$/);
     if(likeAction){
       const entryId=Number(likeAction[1]),entry=this.entry(entryId);
       if(!entry){this.ack(id,'Submission unavailable.');return;}
