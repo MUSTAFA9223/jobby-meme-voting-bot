@@ -527,7 +527,8 @@ export async function resolveXMedia(tweetUrl) {
     const raw=typeof item==='string'?item:(item.url||item.media_url||item.src||'');
     if(!raw)continue;
     let url;try{url=new URL(raw);}catch{continue;}
-    const allowedHost=['twimg.com','twitter.com','vxtwitter.com'].some(domain=>url.hostname===domain||url.hostname.endsWith('.'+domain));\n    if(url.protocol!=='https:'||!allowedHost)continue;
+    const allowedHost=['twimg.com','twitter.com','vxtwitter.com'].some(domain=>url.hostname===domain||url.hostname.endsWith('.'+domain));
+    if(url.protocol!=='https:'||!allowedHost)continue;
     const kind=String(item.type||item.media_type||'').toLowerCase();
     const video=kind.includes('video');
     const gif=kind.includes('gif')||kind.includes('animated');
