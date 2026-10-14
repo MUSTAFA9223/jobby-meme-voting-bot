@@ -149,7 +149,7 @@ test('gallery opens as a lightweight menu and caches X-only media after first vi
  assert.ok(buttons.some(x=>x.text==='X creator'));assert.ok(buttons.every(x=>x.text!=='Telegram creator'));
  assert.equal(db.prepare('SELECT photo_file_id FROM entries WHERE id=1').get().photo_file_id,'cached-photo');
 });
-test('connected groups and channels receive gallery posts without voting controls',async()=>{
+test('connected groups and channels receive gallery posts with only a like control',async()=>{
  const {env,db}=fixture(),sent=[];globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
  await post(env,membership(1,-100123,'JOBBY Community','supergroup'));
  const forwarded=message(2,'');forwarded.message.forward_origin={type:'channel',chat:{id:-100456,title:'JOBBY Channel',type:'channel'}};await post(env,forwarded);
@@ -161,9 +161,29 @@ test('connected groups and channels receive gallery posts without voting control
  await post(env,cb(4,'admin:post:1:-100123',8355389673));
  const published=sent.find(x=>x.method==='sendVideo'&&x.payload.chat_id===-100123);
  assert.ok(published);assert.match(published.payload.caption,/JOBBY MEME ENTRY/);assert.match(published.payload.caption,/View on X/);
- const buttons=published.payload.reply_markup.inline_keyboard.flat();assert.ok(buttons.some(x=>x.text==='🐦 View original post on X'&&x.url==='https://x.com/creator/status/1'));assert.ok(buttons.every(x=>!x.callback_data));
+ const buttons=published.payload.reply_markup.inline_keyboard.flat();assert.ok(buttons.some(x=>x.text==='View original post on X'&&x.url==='https://x.com/creator/status/1'));assert.deepEqual(buttons.filter(x=>x.callback_data).map(x=>x.callback_data),['like:1']);assert.ok(buttons.some(x=>x.text==='Like (0)'&&x.callback_data==='like:1'));
  assert.ok(!/Votes|Rating|vote|rate/i.test(published.payload.caption));
 });
+
+test('each submission has one persistent like button that toggles per Telegram user',async()=>{
+ const {env,db}=fixture(),sent=[];seed(db,1);
+ globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
+ await post(env,membership(1,-100123,'JOBBY Community','supergroup'));
+ await post(env,cb(2,'admin:post:1:-100123',8355389673));
+ const published=sent.find(x=>x.method==='sendPhoto'&&x.payload.chat_id===-100123);
+ assert.ok(published);
+ const likeButton=published.payload.reply_markup.inline_keyboard.flat().find(x=>x.callback_data==='like:1');
+ assert.equal(likeButton.text,'Like (0)');
+ await post(env,groupCb(3,'like:1','photo',44));
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM entry_likes WHERE entry_id=1').get().n,1);
+ const likedMarkup=sent.filter(x=>x.method==='editMessageReplyMarkup').at(-1).payload.reply_markup.inline_keyboard.flat();
+ assert.ok(likedMarkup.some(x=>x.callback_data==='like:1'&&x.text==='Unlike (1)'));
+ await post(env,groupCb(4,'like:1','photo',44));
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM entry_likes WHERE entry_id=1').get().n,0);
+ const unlikedMarkup=sent.filter(x=>x.method==='editMessageReplyMarkup').at(-1).payload.reply_markup.inline_keyboard.flat();
+ assert.ok(unlikedMarkup.some(x=>x.callback_data==='like:1'&&x.text==='Like (0)'));
+});
+
 test('only the configured organizer can connect a group or use submission controls',async()=>{
  const {env,db}=fixture(),sent=[];globalThis.fetch=async(url,opts)=>{sent.push({method:String(url).split('/').at(-1),payload:JSON.parse(opts.body)});return Response.json({ok:true,result:{}});};
  await post(env,membership(1,-100999,'Unauthorized Group','supergroup','member',44));
