@@ -400,6 +400,18 @@ export class Contest {
       const entryId=Number(likeAction[1]),entry=this.entry(entryId);
       if(!entry){this.ack(id,'Submission unavailable.');return;}
       const existing=await this.env.DB.prepare('SELECT entry_id FROM entry_likes WHERE entry_id=? AND user_id=?').bind(entryId,this.userId).first();
+      // Channel/group keyboards are shared by every reader, so keep their
+      // button label as Like and make likes one-per-user. Private gallery cards
+      // can safely toggle Like/Unlike because they are user-specific.
+      if(!privateChat){
+        if(existing){this.ack(id,'You already liked this submission.');return;}
+        this.write('INSERT OR IGNORE INTO entry_likes(entry_id,user_id,created_at) VALUES(?,?,?)',entryId,this.userId,now());
+        this.state.likeCounts[entryId]=(this.state.likeCounts[entryId]||0)+1;
+        const rows=(c.message.reply_markup?.inline_keyboard||[]).map(row=>row.map(b=>b.callback_data===action?{...b,text:`Like (${this.state.likeCounts[entryId]||0})`}:b));
+        this.api('editMessageReplyMarkup',{chat_id:cid,message_id:c.message.message_id,reply_markup:{inline_keyboard:rows}});
+        this.ack(id,'Liked');
+        return;
+      }
       if(existing){
         this.write('DELETE FROM entry_likes WHERE entry_id=? AND user_id=?',entryId,this.userId);
         this.state.userLikes?.delete(entryId);
