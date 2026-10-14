@@ -273,7 +273,7 @@ export class Contest {
     // For a pasted X link, keep the extracted full-size video/photo and review
     // details in one Telegram media card, with the action buttons attached to it.
     // Forwarded submissions retain the existing two-message review flow.
-    if(!d.forwarded_import){
+    if(d.x_media_import){
       this.media(chat,d.media_type||'photo',d.photo_file_id,details,actions);
     }else{
       this.media(chat,d.media_type||'photo',d.photo_file_id,'<b>Meme preview</b>');
@@ -285,7 +285,7 @@ export class Contest {
     if(!tweet_url)return false;
     try{
       const media=await resolveXMedia(tweet_url);
-      const data={tweet_url,x_username:xHandleFromTweet(tweet_url),media_type:media.type,photo_file_id:media.url,telegram_username:''};
+      const data={tweet_url,x_username:xHandleFromTweet(tweet_url),media_type:media.type,photo_file_id:media.url,telegram_username:'',x_media_import:true};
       this.draft('confirm',data);
       this.send(chat,'X post detected. The meme media was extracted automatically. Review it below, then publish or cancel.');
       this.preview(chat);
